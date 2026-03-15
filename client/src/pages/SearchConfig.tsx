@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import SearchForm from "../components/SearchForm";
+import { api } from "../api";
 
 export default function SearchConfig() {
   const [searches, setSearches] = useState<any[]>([]);
@@ -12,11 +13,11 @@ export default function SearchConfig() {
   }, []);
 
   function loadSearches() {
-    fetch("/api/searches").then((r) => r.json()).then(setSearches);
+    api("/api/searches").then((r) => r.json()).then(setSearches);
   }
 
   async function handleCreate(data: any) {
-    await fetch("/api/searches", {
+    await api("/api/searches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -26,7 +27,7 @@ export default function SearchConfig() {
   }
 
   async function handleUpdate(id: number, data: any) {
-    await fetch(`/api/searches/${id}`, {
+    await api(`/api/searches/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -37,14 +38,14 @@ export default function SearchConfig() {
 
   async function handleDelete(id: number) {
     if (!confirm("Delete this search?")) return;
-    await fetch(`/api/searches/${id}`, { method: "DELETE" });
+    await api(`/api/searches/${id}`, { method: "DELETE" });
     loadSearches();
   }
 
   async function handleScrape(id: number) {
     setScraping(id);
     try {
-      const res = await fetch(`/api/scrape/${id}`, { method: "POST" });
+      const res = await api(`/api/scrape/${id}`, { method: "POST" });
       const data = await res.json();
       alert(`Scrape complete! Found ${data.newListings} new listings.`);
     } catch {
@@ -55,7 +56,7 @@ export default function SearchConfig() {
 
   async function handleFbLogin() {
     try {
-      const res = await fetch("/api/scrape/facebook/login", { method: "POST" });
+      const res = await api("/api/scrape/facebook/login", { method: "POST" });
       const data = await res.json();
       alert(data.message || "Login complete!");
     } catch {

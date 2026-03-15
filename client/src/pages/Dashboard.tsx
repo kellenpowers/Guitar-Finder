@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ListingCard from "../components/ListingCard";
+import { api } from "../api";
 
 export default function Dashboard() {
   const [listings, setListings] = useState<any[]>([]);
@@ -8,8 +9,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/listings?sortBy=score&minScore=10").then((r) => r.json()),
-      fetch("/api/searches").then((r) => r.json()),
+      api("/api/listings?sortBy=score&minScore=10").then((r) => r.json()),
+      api("/api/searches").then((r) => r.json()),
     ]).then(([listingsData, searches]) => {
       setListings(listingsData);
       setStats({

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ListingCard from "../components/ListingCard";
+import { api } from "../api";
 
 export default function Listings() {
   const [listings, setListings] = useState<any[]>([]);
@@ -15,7 +16,7 @@ export default function Listings() {
     if (source) params.set("source", source);
     if (minScore) params.set("minScore", minScore);
 
-    fetch(`/api/listings?${params}`)
+    api(`/api/listings?${params}`)
       .then((r) => r.json())
       .then((data) => {
         setListings(data);
