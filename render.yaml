@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: guitar-finder-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: REVERB_API_TOKEN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
