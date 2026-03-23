@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm run build --workspace=client",
+  "buildCommand": "cd client && npm run build",
   "outputDirectory": "client/dist",
-  "installCommand": "npm install --workspace=client",
+  "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
     {
