@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: bigfoot-audit-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: FRONTEND_URL
+        value: "*"
+      - key: PORT
+        value: "3001"
