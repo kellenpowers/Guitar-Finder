@@ -1,10 +1,10 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import SearchConfig from "./pages/SearchConfig";
 import Listings from "./pages/Listings";
 import AuditBooking from "./pages/AuditBooking";
 
-export default function App() {
+function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <nav className="bg-white shadow-sm border-b">
@@ -23,14 +23,26 @@ export default function App() {
           </Link>
         </div>
       </nav>
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/searches" element={<SearchConfig />} />
-          <Route path="/listings" element={<Listings />} />
-          <Route path="/audit" element={<AuditBooking />} />
-        </Routes>
-      </main>
+      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
+  );
+}
+
+export default function App() {
+  const location = useLocation();
+
+  // /audit renders standalone — no Deal Finder nav (designed for iframe embed)
+  if (location.pathname === "/audit") {
+    return <AuditBooking />;
+  }
+
+  return (
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/searches" element={<SearchConfig />} />
+        <Route path="/listings" element={<Listings />} />
+      </Routes>
+    </AppShell>
   );
 }
