@@ -2,6 +2,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import SearchConfig from "./pages/SearchConfig";
 import Listings from "./pages/Listings";
+import AuditBooking from "./pages/AuditBooking";
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/searches" element={<SearchConfig />} />
           <Route path="/listings" element={<Listings />} />
+          <Route path="/audit" element={<AuditBooking />} />
         </Routes>
       </main>
     </div>

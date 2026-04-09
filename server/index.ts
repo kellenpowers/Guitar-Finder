@@ -3,6 +3,7 @@ import cors from "cors";
 import searchesRouter from "./routes/searches.js";
 import listingsRouter from "./routes/listings.js";
 import pricingRouter from "./routes/pricing.js";
+import auditRouter from "./routes/audit.js";
 import { facebookScraper } from "./scrapers/facebook.js";
 import { runSearch } from "./services/scheduler.js";
 import { startScheduler } from "./services/scheduler.js";
@@ -22,6 +23,7 @@ app.use(express.json());
 app.use("/api/searches", searchesRouter);
 app.use("/api/listings", listingsRouter);
 app.use("/api/pricing", pricingRouter);
+app.use("/api/audit", auditRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
