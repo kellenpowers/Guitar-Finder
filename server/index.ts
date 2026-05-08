@@ -5,6 +5,7 @@ import searchesRouter from "./routes/searches.js";
 import listingsRouter from "./routes/listings.js";
 import pricingRouter from "./routes/pricing.js";
 import { facebookScraper } from "./scrapers/facebook.js";
+import { saveCookies } from "./scrapers/facebook.js";
 import { runSearch } from "./services/scheduler.js";
 import { startScheduler } from "./services/scheduler.js";
 import { getDb } from "./db/index.js";
@@ -29,14 +30,17 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Facebook login flow — opens a browser for manual login
-app.post("/api/scrape/facebook/login", async (_req, res) => {
+app.post("/api/scrape/facebook/cookies", async (req, res) => {
   try {
-    await facebookScraper.login();
-    res.json({ ok: true, message: "Logged in and cookies saved" });
+    const { cookies } = req.body;
+    if (!cookies || !Array.isArray(cookies)) {
+      return res.status(400).json({ error: "Expected { cookies: [...] }" });
+    }
+    saveCookies(cookies);
+    res.json({ ok: true, message: `Saved ${cookies.length} cookies` });
   } catch (err) {
-    console.error("Facebook login failed:", err);
-    res.status(500).json({ error: "Login failed" });
+    console.error("Cookie save failed:", err);
+    res.status(500).json({ error: "Failed to save cookies" });
   }
 });
 
