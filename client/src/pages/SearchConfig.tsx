@@ -7,13 +7,35 @@ export default function SearchConfig() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [scraping, setScraping] = useState<number | null>(null);
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [cookieText, setCookieText] = useState("");
+  const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
 
   useEffect(() => {
     loadSearches();
   }, []);
 
   function loadSearches() {
-    api("/api/searches").then((r) => r.json()).then(setSearches);
+    api("/api/searches")
+      .then((r) => r.json())
+      .then(setSearches)
+      .catch(() => {});
+  }
+
+  async function handleFbLogin() {
+    setFbLoginStatus("pending");
+    try {
+      const res = await api("/api/scrape/facebook/login", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Facebook session saved! You can now run scrapes.");
+      } else {
+        alert(data.error || "Login failed.");
+      }
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+    setFbLoginStatus("idle");
   }
 
   async function handleCreate(data: any) {
@@ -54,13 +76,24 @@ export default function SearchConfig() {
     setScraping(null);
   }
 
-  async function handleFbLogin() {
+  async function handleCookieSubmit() {
     try {
-      const res = await api("/api/scrape/facebook/login", { method: "POST" });
+      const cookies = JSON.parse(cookieText);
+      const res = await api("/api/scrape/facebook/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookies: Array.isArray(cookies) ? cookies : [cookies] }),
+      });
       const data = await res.json();
-      alert(data.message || "Login complete!");
+      if (res.ok) {
+        alert(data.message || "Cookies saved!");
+        setShowCookieModal(false);
+        setCookieText("");
+      } else {
+        alert(data.error || "Failed to save cookies.");
+      }
     } catch {
-      alert("Login failed.");
+      alert("Invalid JSON. Make sure you copied the cookies correctly.");
     }
   }
 
@@ -71,9 +104,19 @@ export default function SearchConfig() {
         <div className="flex gap-2">
           <button
             onClick={handleFbLogin}
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+            disabled={fbLoginStatus === "pending"}
+            title="Opens a Facebook login window on the computer running the server"
+            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
           >
-            FB Login
+            {fbLoginStatus === "pending"
+              ? "Waiting for login... (check the browser window)"
+              : "Log in with Facebook"}
+          </button>
+          <button
+            onClick={() => setShowCookieModal(true)}
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+          >
+            Paste Cookies
           </button>
           <button
             onClick={() => setShowForm(true)}
@@ -157,6 +200,40 @@ export default function SearchConfig() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {showCookieModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-5 max-w-lg w-full">
+            <h2 className="text-lg font-semibold mb-2">Paste Facebook Cookies</h2>
+            <p className="text-sm text-gray-500 mb-3">
+              1. Log in to facebook.com in your browser<br />
+              2. Install a cookie export extension (e.g. "EditThisCookie" or "Cookie-Editor")<br />
+              3. Export cookies as JSON and paste below
+            </p>
+            <textarea
+              value={cookieText}
+              onChange={(e) => setCookieText(e.target.value)}
+              placeholder='[{"name": "c_user", "value": "...", "domain": ".facebook.com", ...}]'
+              className="w-full h-40 border rounded p-2 text-xs font-mono mb-3"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setShowCookieModal(false); setCookieText(""); }}
+                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCookieSubmit}
+                disabled={!cookieText.trim()}
+                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save Cookies
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

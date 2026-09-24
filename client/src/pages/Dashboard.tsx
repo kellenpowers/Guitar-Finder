@@ -5,24 +5,41 @@ import { api } from "../api";
 export default function Dashboard() {
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [stats, setStats] = useState({ totalListings: 0, totalSearches: 0 });
 
   useEffect(() => {
     Promise.all([
       api("/api/listings?sortBy=score&minScore=10").then((r) => r.json()),
       api("/api/searches").then((r) => r.json()),
-    ]).then(([listingsData, searches]) => {
-      setListings(listingsData);
-      setStats({
-        totalListings: listingsData.length,
-        totalSearches: searches.length,
+    ])
+      .then(([listingsData, searches]) => {
+        setListings(listingsData);
+        setStats({
+          totalListings: listingsData.length,
+          totalSearches: searches.length,
+        });
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
       });
-      setLoading(false);
-    });
   }, []);
 
   if (loading) {
     return <div className="text-center py-12 text-gray-500">Loading...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12 bg-white rounded-lg border">
+        <p className="text-gray-700 font-medium">Can't reach the backend server.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          Make sure it's running (npm start), then refresh this page.
+        </p>
+      </div>
+    );
   }
 
   return (

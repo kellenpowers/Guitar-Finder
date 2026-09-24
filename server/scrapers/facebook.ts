@@ -152,4 +152,11 @@ function buildSearchUrl(options: ScraperOptions): string {
   return `https://www.facebook.com/marketplace/search/?${params.toString()}`;
 }
 
+export function saveCookies(cookies: unknown[]) {
+  const dir = path.dirname(COOKIES_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
+  console.log(`Saved ${cookies.length} cookies to ${COOKIES_PATH}`);
+}
+
 export const facebookScraper = new FacebookMarketplaceScraper();

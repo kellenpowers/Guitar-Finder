@@ -21,7 +21,8 @@ export default function Listings() {
       .then((data) => {
         setListings(data);
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, [sortBy, source, minScore]);
 
   return (
