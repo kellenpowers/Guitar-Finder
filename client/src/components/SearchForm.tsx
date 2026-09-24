@@ -11,18 +11,27 @@ interface SearchFormProps {
     radiusMiles: number;
     cronSchedule: string;
   };
+  defaults?: {
+    location?: string;
+    radiusMiles?: string;
+    maxPrice?: string;
+  };
   onSubmit: (data: any) => void;
   onCancel?: () => void;
 }
 
-export default function SearchForm({ initial, onSubmit, onCancel }: SearchFormProps) {
+export default function SearchForm({ initial, defaults, onSubmit, onCancel }: SearchFormProps) {
   const [name, setName] = useState(initial?.name || "");
   const [query, setQuery] = useState(initial?.query || "");
   const [category, setCategory] = useState(initial?.category || "");
-  const [maxPrice, setMaxPrice] = useState(initial?.maxPrice?.toString() || "");
+  const [maxPrice, setMaxPrice] = useState(
+    initial?.maxPrice?.toString() ?? defaults?.maxPrice ?? ""
+  );
   const [minDealScore, setMinDealScore] = useState(initial?.minDealScore?.toString() || "20");
-  const [location, setLocation] = useState(initial?.location || "");
-  const [radiusMiles, setRadiusMiles] = useState(initial?.radiusMiles?.toString() || "25");
+  const [location, setLocation] = useState(initial?.location ?? defaults?.location ?? "");
+  const [radiusMiles, setRadiusMiles] = useState(
+    initial?.radiusMiles?.toString() ?? defaults?.radiusMiles ?? "25"
+  );
   const [cronSchedule, setCronSchedule] = useState(initial?.cronSchedule || "*/30 * * * *");
 
   function handleSubmit(e: React.FormEvent) {

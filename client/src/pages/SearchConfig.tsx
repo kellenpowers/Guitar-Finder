@@ -10,10 +10,27 @@ export default function SearchConfig() {
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [cookieText, setCookieText] = useState("");
   const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [showDefaultsModal, setShowDefaultsModal] = useState(false);
+  const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadSearches();
+    api("/api/settings")
+      .then((r) => r.json())
+      .then(setSettings)
+      .catch(() => {});
   }, []);
+
+  async function handleSaveDefaults() {
+    await api("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(defaultsDraft),
+    });
+    setSettings(defaultsDraft);
+    setShowDefaultsModal(false);
+  }
 
   function loadSearches() {
     api("/api/searches")
@@ -119,6 +136,15 @@ export default function SearchConfig() {
             Paste Cookies
           </button>
           <button
+            onClick={() => {
+              setDefaultsDraft(settings);
+              setShowDefaultsModal(true);
+            }}
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+          >
+            Defaults
+          </button>
+          <button
             onClick={() => setShowForm(true)}
             className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
           >
@@ -130,7 +156,15 @@ export default function SearchConfig() {
       {showForm && (
         <div className="bg-white rounded-lg border p-4 mb-4">
           <h2 className="text-lg font-semibold mb-3">New Search</h2>
-          <SearchForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} />
+          <SearchForm
+            defaults={{
+              location: settings.default_location,
+              radiusMiles: settings.default_radius_miles,
+              maxPrice: settings.default_max_price,
+            }}
+            onSubmit={handleCreate}
+            onCancel={() => setShowForm(false)}
+          />
         </div>
       )}
 
@@ -200,6 +234,75 @@ export default function SearchConfig() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {showDefaultsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-5 max-w-md w-full">
+            <h2 className="text-lg font-semibold mb-2">Search Defaults</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Pre-filled whenever you create a new search.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Default Location
+                </label>
+                <input
+                  type="text"
+                  value={defaultsDraft.default_location || ""}
+                  onChange={(e) =>
+                    setDefaultsDraft({ ...defaultsDraft, default_location: e.target.value })
+                  }
+                  placeholder="e.g. Savannah, GA"
+                  className="mt-1 block w-full rounded border-gray-300 shadow-sm text-sm p-2 border"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Default Radius (miles)
+                </label>
+                <input
+                  type="number"
+                  value={defaultsDraft.default_radius_miles || ""}
+                  onChange={(e) =>
+                    setDefaultsDraft({ ...defaultsDraft, default_radius_miles: e.target.value })
+                  }
+                  placeholder="25"
+                  className="mt-1 block w-full rounded border-gray-300 shadow-sm text-sm p-2 border"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Default Max Price ($)
+                </label>
+                <input
+                  type="number"
+                  value={defaultsDraft.default_max_price || ""}
+                  onChange={(e) =>
+                    setDefaultsDraft({ ...defaultsDraft, default_max_price: e.target.value })
+                  }
+                  placeholder="No limit"
+                  className="mt-1 block w-full rounded border-gray-300 shadow-sm text-sm p-2 border"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button
+                onClick={() => setShowDefaultsModal(false)}
+                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveDefaults}
+                className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+              >
+                Save Defaults
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

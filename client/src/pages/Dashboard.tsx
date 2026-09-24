@@ -1,24 +1,22 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import ListingCard from "../components/ListingCard";
 import { api } from "../api";
 
 export default function Dashboard() {
-  const [listings, setListings] = useState<any[]>([]);
+  const [allListings, setAllListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [stats, setStats] = useState({ totalListings: 0, totalSearches: 0 });
+  const [searchCount, setSearchCount] = useState(0);
 
   useEffect(() => {
     Promise.all([
-      api("/api/listings?sortBy=score&minScore=10").then((r) => r.json()),
+      api("/api/listings?sortBy=score").then((r) => r.json()),
       api("/api/searches").then((r) => r.json()),
     ])
       .then(([listingsData, searches]) => {
-        setListings(listingsData);
-        setStats({
-          totalListings: listingsData.length,
-          totalSearches: searches.length,
-        });
+        setAllListings(listingsData);
+        setSearchCount(searches.length);
         setLoading(false);
       })
       .catch(() => {
@@ -42,25 +40,56 @@ export default function Dashboard() {
     );
   }
 
+  const deals = allListings.filter((l) => (l.deal_score ?? 0) >= 10);
+  const hasMarketValues = allListings.some((l) => l.estimated_market_value != null);
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Top Deals</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {stats.totalSearches} active searches / {stats.totalListings} deals found
+          {searchCount} active searches / {allListings.length} listings scraped /{" "}
+          {deals.length} deals found
         </p>
       </div>
 
-      {listings.length === 0 ? (
+      {deals.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border">
-          <p className="text-gray-500">No deals found yet.</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Create a search and run a scrape to get started.
-          </p>
+          {allListings.length === 0 ? (
+            <>
+              <p className="text-gray-500">No listings yet.</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Go to{" "}
+                <Link to="/searches" className="text-indigo-600 hover:underline">
+                  Searches
+                </Link>{" "}
+                to create a search and run a scrape.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-500">
+                {allListings.length} listings scraped, but none scored as a deal yet.
+              </p>
+              <p className="text-sm text-gray-400 mt-1">
+                Browse everything on the{" "}
+                <Link to="/listings" className="text-indigo-600 hover:underline">
+                  All Listings
+                </Link>{" "}
+                page.
+              </p>
+              {!hasMarketValues && (
+                <p className="text-sm text-amber-600 mt-3 max-w-md mx-auto">
+                  Deal scoring is off because no Reverb prices were found. Add your
+                  REVERB_API_TOKEN to the .env file (see README), then re-run a scrape.
+                </p>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
-          {listings.map((listing) => (
+          {deals.map((listing) => (
             <ListingCard key={listing.id} listing={listing} />
           ))}
         </div>
