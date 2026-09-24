@@ -68,21 +68,27 @@ export class FacebookMarketplaceScraper implements Scraper {
 
     try {
       const page = await context.newPage();
-      const searchUrl = buildSearchUrl(options);
-      console.log(`Scraping Facebook Marketplace: ${searchUrl}`);
 
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
-      await randomDelay(2000, 4000);
+      const loadAndCollect = async (url: string) => {
+        console.log(`Scraping Facebook Marketplace: ${url}`);
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        await randomDelay(2000, 4000);
+        for (let i = 0; i < 5; i++) {
+          await page.mouse.wheel(0, 1200);
+          await randomDelay(1000, 2000);
+        }
+        // Find every listing link on the page instead of relying on Facebook's
+        // container structure, which changes often and silently breaks parsing.
+        return page.$$("a[href*='/marketplace/item/']");
+      };
 
-      // Scroll to load more results
-      for (let i = 0; i < 5; i++) {
-        await page.mouse.wheel(0, 1200);
-        await randomDelay(1000, 2000);
+      let anchors = await loadAndCollect(buildSearchUrl(options));
+
+      // A wrong city slug can land on an empty page — retry without location
+      if (anchors.length === 0 && citySlug(options.location)) {
+        console.warn("No results with location slug — retrying without location.");
+        anchors = await loadAndCollect(buildSearchUrl({ ...options, location: "" }));
       }
-
-      // Find every listing link on the page instead of relying on Facebook's
-      // container structure, which changes often and silently breaks parsing.
-      const anchors = await page.$$("a[href*='/marketplace/item/']");
       if (anchors.length === 0) {
         console.warn(
           "No Marketplace item links found — Facebook may have changed its layout, " +
@@ -153,6 +159,12 @@ export function parseCardLines(
   return { price, title, location };
 }
 
+// "Savannah, GA" -> "savannah"; "San Diego, CA" -> "sandiego"
+export function citySlug(location: string): string {
+  const city = (location || "").split(",")[0].trim().toLowerCase();
+  return city.replace(/[^a-z]/g, "");
+}
+
 function buildSearchUrl(options: ScraperOptions): string {
   const params = new URLSearchParams();
   params.set("query", options.query);
@@ -162,8 +174,13 @@ function buildSearchUrl(options: ScraperOptions): string {
   params.set("daysSinceListed", "7");
   params.set("sortBy", "creation_time_descend");
 
-  // Default to a broad area; location is set via cookies/account
-  return `https://www.facebook.com/marketplace/search/?${params.toString()}`;
+  // With a location, use the city-specific marketplace page; otherwise
+  // Facebook uses the account's home area.
+  const slug = citySlug(options.location);
+  const base = slug
+    ? `https://www.facebook.com/marketplace/${slug}/search`
+    : "https://www.facebook.com/marketplace/search";
+  return `${base}/?${params.toString()}`;
 }
 
 export function saveCookies(cookies: unknown[]) {

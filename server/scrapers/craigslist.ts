@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
+import { citySlug } from "./facebook.js";
 
 // Craigslist serves a server-rendered fallback (li.cl-static-search-result)
 // that needs no login or JavaScript. The site subdomain (e.g. "austin" in
@@ -40,11 +41,13 @@ export class CraigslistScraper implements Scraper {
   name = "craigslist";
 
   async scrape(options: ScraperOptions): Promise<ScrapedListing[]> {
-    const site = process.env.CRAIGSLIST_SITE;
+    // Explicit env var wins; otherwise derive the site from the search's
+    // location (most US cities match their craigslist subdomain).
+    const site = process.env.CRAIGSLIST_SITE || citySlug(options.location);
     if (!site) {
       console.warn(
-        "Skipping Craigslist: set CRAIGSLIST_SITE in .env to your local site " +
-          "(the first part of your craigslist URL, e.g. 'austin' for austin.craigslist.org)."
+        "Skipping Craigslist: set a search location or CRAIGSLIST_SITE in .env " +
+          "(the first part of your craigslist URL, e.g. 'savannah' for savannah.craigslist.org)."
       );
       return [];
     }

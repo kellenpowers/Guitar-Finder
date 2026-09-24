@@ -49,7 +49,7 @@ export default function ListingCard({ listing }: ListingCardProps) {
             <DealBadge score={listing.deal_score} />
             {listing.estimated_market_value && (
               <span className="text-xs text-gray-500">
-                Reverb: ${listing.estimated_market_value.toLocaleString()}
+                Est. value: ${listing.estimated_market_value.toLocaleString()}
               </span>
             )}
             {listing.savings && listing.savings > 0 && (
@@ -60,9 +60,13 @@ export default function ListingCard({ listing }: ListingCardProps) {
           </div>
           <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
             <span>
-              {{ facebook: "FB Marketplace", craigslist: "Craigslist", ebay: "eBay" }[
-                listing.source
-              ] || listing.source}
+              {{
+                facebook: "FB Marketplace",
+                craigslist: "Craigslist",
+                ebay: "eBay",
+                offerup: "OfferUp",
+                reverb: "Reverb",
+              }[listing.source] || listing.source}
             </span>
             {listing.location && <span>{listing.location}</span>}
             <span>{new Date(listing.scraped_at).toLocaleDateString()}</span>

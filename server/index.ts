@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import searchesRouter from "./routes/searches.js";
 import listingsRouter from "./routes/listings.js";
 import pricingRouter from "./routes/pricing.js";
+import settingsRouter from "./routes/settings.js";
 import { facebookScraper } from "./scrapers/facebook.js";
 import { saveCookies } from "./scrapers/facebook.js";
 import { runSearch } from "./services/scheduler.js";
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use("/api/searches", searchesRouter);
 app.use("/api/listings", listingsRouter);
 app.use("/api/pricing", pricingRouter);
+app.use("/api/settings", settingsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

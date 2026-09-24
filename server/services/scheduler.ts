@@ -2,11 +2,19 @@ import cron from "node-cron";
 import { getDb } from "../db/index.js";
 import { facebookScraper } from "../scrapers/facebook.js";
 import { craigslistScraper } from "../scrapers/craigslist.js";
-import { ebayScraper } from "../scrapers/ebay.js";
+import { ebayScraper, fetchEbaySoldEstimate } from "../scrapers/ebay.js";
+import { reverbScraper } from "../scrapers/reverb.js";
+import { offerUpScraper } from "../scrapers/offerup.js";
 import { checkPrice } from "./reverb-checker.js";
 import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
 
-const scrapers: Scraper[] = [facebookScraper, craigslistScraper, ebayScraper];
+const scrapers: Scraper[] = [
+  facebookScraper,
+  craigslistScraper,
+  ebayScraper,
+  offerUpScraper,
+  reverbScraper,
+];
 
 const activeTasks = new Map<number, cron.ScheduledTask>();
 
@@ -86,9 +94,13 @@ export async function runSearch(search: any): Promise<number> {
       );
       if (result.changes > 0) {
         newCount++;
-        // Auto-check price for new listings
+        // Auto-check price for new listings: Reverb first (music gear),
+        // then median of recently sold eBay listings (everything else)
         try {
-          const priceResult = await checkPrice(listing.title);
+          let priceResult = await checkPrice(listing.title);
+          if (!priceResult) {
+            priceResult = await fetchEbaySoldEstimate(listing.title).catch(() => null);
+          }
           if (priceResult) {
             const listingRow = db.prepare(
               "SELECT id FROM listings WHERE source = ? AND external_id = ?"

@@ -1,6 +1,6 @@
 # Guitar Deal Finder
 
-Find underpriced guitars on Facebook Marketplace, Craigslist, and eBay by comparing asking prices against Reverb market values.
+Find underpriced gear on Facebook Marketplace, Craigslist, eBay, OfferUp, and Reverb by comparing asking prices against real market values.
 
 This app runs **on your own computer**. That's deliberate: Facebook has no public API, so the app browses Marketplace with your logged-in session — and that works far more reliably from your home internet connection than from a cloud server, which Facebook tends to block.
 
@@ -16,10 +16,10 @@ npm run setup
 
 Then copy `.env.example` to a file named `.env` in the project folder and fill it in:
 
-- `REVERB_API_TOKEN` — free token from https://reverb.com/my/api_settings, used to estimate what a guitar is actually worth (this powers deal scoring)
-- `CRAIGSLIST_SITE` — the first part of your local craigslist URL, e.g. `austin` for austin.craigslist.org (leave empty to skip Craigslist)
+- `REVERB_API_TOKEN` — free token from https://reverb.com/my/api_settings, used to search Reverb and to estimate what music gear is worth
+- `CRAIGSLIST_SITE` — optional override for your local craigslist subdomain; normally it's derived from your search's location automatically (e.g. "Savannah, GA" → savannah.craigslist.org)
 
-eBay needs no setup — it's searched automatically.
+eBay and OfferUp need no setup.
 
 ## Running it
 
@@ -40,10 +40,12 @@ Scheduled searches run automatically while the app is running. Your Facebook ses
 
 ## How it works
 
-1. **Searches three sources**: Facebook Marketplace (a real browser with your logged-in session), Craigslist, and eBay (no login needed)
-2. **Checks Reverb** for comparable items to estimate market value
+1. **Searches five sources**: Facebook Marketplace (a real browser with your logged-in session), Craigslist, eBay, OfferUp, and Reverb
+2. **Estimates market value**: Reverb's price data for music gear, with recently *sold* eBay listings as the fallback for everything else (cameras, tools, ...)
 3. **Scores deals** by how far below market the asking price is
 4. **Dashboard** shows the best deals sorted by score
+
+Tip: the **Defaults** button on the Searches page saves your usual location, radius, and max price so every new search starts pre-filled.
 
 **A note on Facebook:** there is no official Marketplace API, and automated browsing is against Facebook's terms of service. This tool mimics a human (real browser, random delays, low volume) for personal use, but Facebook changes its site regularly — expect the scraper to need occasional fixes, and don't crank the schedule frequency up.
 

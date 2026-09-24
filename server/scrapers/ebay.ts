@@ -68,3 +68,45 @@ export class EbayScraper implements Scraper {
 }
 
 export const ebayScraper = new EbayScraper();
+
+// Estimate market value from recently SOLD eBay listings (median price).
+// Used as a valuation fallback for items Reverb doesn't cover (cameras, etc.).
+export async function fetchEbaySoldEstimate(
+  query: string
+): Promise<{ estimatedValue: number; comparables: Array<{ title: string; price: number; condition: string; url: string }> } | null> {
+  const params = new URLSearchParams({
+    _nkw: query,
+    LH_Sold: "1",
+    LH_Complete: "1",
+  });
+  const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
+
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+  if (!res.ok) {
+    console.error(`eBay sold search returned ${res.status}`);
+    return null;
+  }
+
+  const sold = parseEbayHtml(await res.text());
+  const prices = sold.map((l) => l.price).filter((p) => p > 0).sort((a, b) => a - b);
+  if (prices.length < 3) return null; // too few data points to trust
+
+  const mid = Math.floor(prices.length / 2);
+  const estimatedValue =
+    prices.length % 2 === 0 ? (prices[mid - 1] + prices[mid]) / 2 : prices[mid];
+
+  const comparables = sold.slice(0, 10).map((l) => ({
+    title: l.title,
+    price: l.price,
+    condition: "Sold on eBay",
+    url: l.listingUrl,
+  }));
+
+  return { estimatedValue, comparables };
+}

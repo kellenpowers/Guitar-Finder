@@ -48,6 +48,8 @@ export default function Listings() {
             <option value="facebook">FB Marketplace</option>
             <option value="craigslist">Craigslist</option>
             <option value="ebay">eBay</option>
+            <option value="offerup">OfferUp</option>
+            <option value="reverb">Reverb</option>
           </select>
           <input
             type="number"

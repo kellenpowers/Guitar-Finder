@@ -42,6 +42,11 @@ export function initSchema(db: Database.Database): void {
       checked_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
     CREATE INDEX IF NOT EXISTS idx_listings_source_external ON listings(source, external_id);
     CREATE INDEX IF NOT EXISTS idx_market_prices_listing_id ON market_prices(listing_id);
