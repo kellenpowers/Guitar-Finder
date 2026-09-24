@@ -1,6 +1,6 @@
 # Guitar Deal Finder
 
-Find underpriced guitars on Facebook Marketplace by comparing asking prices against Reverb market values.
+Find underpriced guitars on Facebook Marketplace, Craigslist, and eBay by comparing asking prices against Reverb market values.
 
 This app runs **on your own computer**. That's deliberate: Facebook has no public API, so the app browses Marketplace with your logged-in session — and that works far more reliably from your home internet connection than from a cloud server, which Facebook tends to block.
 
@@ -14,11 +14,12 @@ cd Guitar-Finder
 npm run setup
 ```
 
-Then set up your Reverb token (used to estimate what a guitar is actually worth):
+Then copy `.env.example` to a file named `.env` in the project folder and fill it in:
 
-1. Get a free token at https://reverb.com/my/api_settings
-2. Copy `.env.example` to a file named `.env` in the project folder
-3. Put the token after `REVERB_API_TOKEN=`
+- `REVERB_API_TOKEN` — free token from https://reverb.com/my/api_settings, used to estimate what a guitar is actually worth (this powers deal scoring)
+- `CRAIGSLIST_SITE` — the first part of your local craigslist URL, e.g. `austin` for austin.craigslist.org (leave empty to skip Craigslist)
+
+eBay needs no setup — it's searched automatically.
 
 ## Running it
 
@@ -39,7 +40,7 @@ Scheduled searches run automatically while the app is running. Your Facebook ses
 
 ## How it works
 
-1. **Scrapes Facebook Marketplace** using a real browser with your logged-in session
+1. **Searches three sources**: Facebook Marketplace (a real browser with your logged-in session), Craigslist, and eBay (no login needed)
 2. **Checks Reverb** for comparable items to estimate market value
 3. **Scores deals** by how far below market the asking price is
 4. **Dashboard** shows the best deals sorted by score

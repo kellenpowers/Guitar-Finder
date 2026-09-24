@@ -59,7 +59,11 @@ export default function ListingCard({ listing }: ListingCardProps) {
             )}
           </div>
           <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
-            <span>{listing.source === "facebook" ? "FB Marketplace" : "Craigslist"}</span>
+            <span>
+              {{ facebook: "FB Marketplace", craigslist: "Craigslist", ebay: "eBay" }[
+                listing.source
+              ] || listing.source}
+            </span>
             {listing.location && <span>{listing.location}</span>}
             <span>{new Date(listing.scraped_at).toLocaleDateString()}</span>
           </div>

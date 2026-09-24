@@ -1,8 +1,12 @@
 import cron from "node-cron";
 import { getDb } from "../db/index.js";
 import { facebookScraper } from "../scrapers/facebook.js";
+import { craigslistScraper } from "../scrapers/craigslist.js";
+import { ebayScraper } from "../scrapers/ebay.js";
 import { checkPrice } from "./reverb-checker.js";
-import type { ScraperOptions } from "../scrapers/base.js";
+import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
+
+const scrapers: Scraper[] = [facebookScraper, craigslistScraper, ebayScraper];
 
 const activeTasks = new Map<number, cron.ScheduledTask>();
 
@@ -53,7 +57,20 @@ export async function runSearch(search: any): Promise<number> {
   };
 
   console.log(`Running search "${search.name}" for "${search.query}"...`);
-  const listings = await facebookScraper.scrape(options);
+
+  // Run every source; one source failing (e.g. Facebook not logged in)
+  // should not stop the others.
+  const bySource: Array<{ source: string; listings: ScrapedListing[] }> = [];
+  let totalFound = 0;
+  for (const scraper of scrapers) {
+    try {
+      const listings = await scraper.scrape(options);
+      bySource.push({ source: scraper.name, listings });
+      totalFound += listings.length;
+    } catch (err) {
+      console.error(`${scraper.name} scrape failed:`, err instanceof Error ? err.message : err);
+    }
+  }
 
   let newCount = 0;
   const insertStmt = db.prepare(`
@@ -61,35 +78,37 @@ export async function runSearch(search: any): Promise<number> {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  for (const listing of listings) {
-    const result = insertStmt.run(
-      search.id, "facebook", listing.externalId, listing.title, listing.description,
-      listing.price, listing.imageUrl, listing.listingUrl, listing.location, listing.postedAt
-    );
-    if (result.changes > 0) {
-      newCount++;
-      // Auto-check price for new listings
-      try {
-        const priceResult = await checkPrice(listing.title);
-        if (priceResult) {
-          const listingRow = db.prepare(
-            "SELECT id FROM listings WHERE source = ? AND external_id = ?"
-          ).get("facebook", listing.externalId) as any;
-          if (listingRow) {
-            db.prepare(`
-              INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings)
-              VALUES (?, ?, ?, ?)
-            `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables));
+  for (const { source, listings } of bySource) {
+    for (const listing of listings) {
+      const result = insertStmt.run(
+        search.id, source, listing.externalId, listing.title, listing.description,
+        listing.price, listing.imageUrl, listing.listingUrl, listing.location, listing.postedAt
+      );
+      if (result.changes > 0) {
+        newCount++;
+        // Auto-check price for new listings
+        try {
+          const priceResult = await checkPrice(listing.title);
+          if (priceResult) {
+            const listingRow = db.prepare(
+              "SELECT id FROM listings WHERE source = ? AND external_id = ?"
+            ).get(source, listing.externalId) as any;
+            if (listingRow) {
+              db.prepare(`
+                INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings)
+                VALUES (?, ?, ?, ?)
+              `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables));
+            }
           }
+        } catch (err) {
+          console.error(`Price check failed for "${listing.title}":`, err);
         }
-      } catch (err) {
-        console.error(`Price check failed for "${listing.title}":`, err);
+        // Rate limit Reverb API calls
+        await new Promise((r) => setTimeout(r, 500));
       }
-      // Rate limit Reverb API calls
-      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
-  console.log(`Search "${search.name}": found ${listings.length} listings, ${newCount} new`);
+  console.log(`Search "${search.name}": found ${totalFound} listings, ${newCount} new`);
   return newCount;
 }

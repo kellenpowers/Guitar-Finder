@@ -47,6 +47,7 @@ export default function Listings() {
             <option value="">All Sources</option>
             <option value="facebook">FB Marketplace</option>
             <option value="craigslist">Craigslist</option>
+            <option value="ebay">eBay</option>
           </select>
           <input
             type="number"

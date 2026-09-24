@@ -75,62 +75,56 @@ export class FacebookMarketplaceScraper implements Scraper {
       await randomDelay(2000, 4000);
 
       // Scroll to load more results
-      for (let i = 0; i < 3; i++) {
-        await page.mouse.wheel(0, 800);
+      for (let i = 0; i < 5; i++) {
+        await page.mouse.wheel(0, 1200);
         await randomDelay(1000, 2000);
       }
 
-      const listings: ScrapedListing[] = [];
+      // Find every listing link on the page instead of relying on Facebook's
+      // container structure, which changes often and silently breaks parsing.
+      const anchors = await page.$$("a[href*='/marketplace/item/']");
+      if (anchors.length === 0) {
+        console.warn(
+          "No Marketplace item links found — Facebook may have changed its layout, " +
+            "or the saved session is logged out (try logging in again)."
+        );
+      }
 
-      // Facebook Marketplace listing cards — selectors may need updating
-      const cards = await page.$$('[aria-label="Collection of Marketplace items"] > div');
+      const byId = new Map<string, ScrapedListing>();
 
-      for (const card of cards) {
+      for (const anchor of anchors) {
         try {
-          const linkEl = await card.$("a[href*='/marketplace/item/']");
-          if (!linkEl) continue;
-
-          const href = await linkEl.getAttribute("href");
+          const href = await anchor.getAttribute("href");
           if (!href) continue;
 
           const externalId = href.match(/\/item\/(\d+)/)?.[1] || "";
-          const listingUrl = `https://www.facebook.com${href.split("?")[0]}`;
+          if (!externalId || byId.has(externalId)) continue;
 
-          // Extract text content from the card
-          const texts = await card.$$eval("span", (spans) =>
-            spans.map((s) => s.textContent?.trim() || "")
-          );
+          const listingUrl = `https://www.facebook.com/marketplace/item/${externalId}`;
 
-          // Typically: price is first, title second, location third
-          const priceText = texts.find((t) => /^\$[\d,]+/.test(t)) || "";
-          const price = parseFloat(priceText.replace(/[$,]/g, "")) || 0;
+          const text = (await anchor.innerText()) || "";
+          const parsed = parseCardLines(text.split("\n"));
+          if (!parsed) continue;
 
-          const title = texts.find((t) => t.length > 3 && !/^\$/.test(t)) || "";
-          const location = texts.find(
-            (t) => t.length > 2 && t !== title && !/^\$/.test(t) && !/^\d/.test(t)
-          ) || "";
-
-          // Try to get image
-          const imgEl = await card.$("img");
+          const imgEl = await anchor.$("img");
           const imageUrl = imgEl ? (await imgEl.getAttribute("src")) || "" : "";
 
-          if (externalId && title) {
-            listings.push({
-              externalId,
-              title,
-              description: "",
-              price,
-              imageUrl,
-              listingUrl,
-              location,
-              postedAt: null,
-            });
-          }
+          byId.set(externalId, {
+            externalId,
+            title: parsed.title,
+            description: "",
+            price: parsed.price,
+            imageUrl,
+            listingUrl,
+            location: parsed.location,
+            postedAt: null,
+          });
         } catch {
           // Skip cards that fail to parse
         }
       }
 
+      const listings = [...byId.values()];
       console.log(`Found ${listings.length} listings on Facebook Marketplace`);
       return listings;
     } finally {
@@ -139,13 +133,33 @@ export class FacebookMarketplaceScraper implements Scraper {
   }
 }
 
+// Facebook card text renders as lines like ["$500", "Canon AE-1 camera", "Austin, TX"].
+// Exported for testing without a live Facebook page.
+export function parseCardLines(
+  lines: string[]
+): { price: number; title: string; location: string } | null {
+  const cleaned = lines.map((l) => l.trim()).filter(Boolean);
+
+  const priceLine = cleaned.find((l) => /^\$[\d,]+/.test(l));
+  const price = priceLine ? parseFloat(priceLine.replace(/[$,]/g, "")) || 0 : 0;
+
+  const rest = cleaned.filter((l) => !/^\$[\d,]+/.test(l));
+  const title = rest.find((l) => l.length > 3) || "";
+  if (!title) return null;
+
+  const afterTitle = rest.slice(rest.indexOf(title) + 1);
+  const location = afterTitle.find((l) => l.length > 2) || "";
+
+  return { price, title, location };
+}
+
 function buildSearchUrl(options: ScraperOptions): string {
   const params = new URLSearchParams();
   params.set("query", options.query);
   if (options.maxPrice) {
-    params.set("maxPrice", String(Math.round(options.maxPrice * 100))); // FB uses cents
+    params.set("maxPrice", String(Math.round(options.maxPrice))); // dollars
   }
-  params.set("daysSinceListed", "1"); // Recent listings only
+  params.set("daysSinceListed", "7");
   params.set("sortBy", "creation_time_descend");
 
   // Default to a broad area; location is set via cookies/account

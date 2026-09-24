@@ -20,7 +20,7 @@ export function initSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS listings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       search_id INTEGER NOT NULL REFERENCES saved_searches(id) ON DELETE CASCADE,
-      source TEXT NOT NULL CHECK(source IN ('facebook', 'craigslist')),
+      source TEXT NOT NULL,
       external_id TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
@@ -45,5 +45,45 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
     CREATE INDEX IF NOT EXISTS idx_listings_source_external ON listings(source, external_id);
     CREATE INDEX IF NOT EXISTS idx_market_prices_listing_id ON market_prices(listing_id);
+  `);
+
+  migrateSourceCheck(db);
+}
+
+// Older databases restricted listings.source to ('facebook', 'craigslist'),
+// which rejects eBay rows. SQLite can't drop a CHECK constraint, so rebuild
+// the table once if the old constraint is present.
+function migrateSourceCheck(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'listings'")
+    .get() as { sql: string } | undefined;
+  if (!row || !row.sql.includes("CHECK(source IN")) return;
+
+  console.log("Migrating listings table to allow new sources...");
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE listings_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      search_id INTEGER NOT NULL REFERENCES saved_searches(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      price REAL NOT NULL,
+      image_url TEXT NOT NULL DEFAULT '',
+      listing_url TEXT NOT NULL,
+      location TEXT NOT NULL DEFAULT '',
+      posted_at TEXT,
+      scraped_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(source, external_id)
+    );
+    INSERT INTO listings_new SELECT * FROM listings;
+    DROP TABLE listings;
+    ALTER TABLE listings_new RENAME TO listings;
+    CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
+    CREATE INDEX IF NOT EXISTS idx_listings_source_external ON listings(source, external_id);
+    COMMIT;
+    PRAGMA foreign_keys = ON;
   `);
 }
