@@ -9,13 +9,33 @@ export default function SearchConfig() {
   const [scraping, setScraping] = useState<number | null>(null);
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [cookieText, setCookieText] = useState("");
+  const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
 
   useEffect(() => {
     loadSearches();
   }, []);
 
   function loadSearches() {
-    api("/api/searches").then((r) => r.json()).then(setSearches);
+    api("/api/searches")
+      .then((r) => r.json())
+      .then(setSearches)
+      .catch(() => {});
+  }
+
+  async function handleFbLogin() {
+    setFbLoginStatus("pending");
+    try {
+      const res = await api("/api/scrape/facebook/login", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Facebook session saved! You can now run scrapes.");
+      } else {
+        alert(data.error || "Login failed.");
+      }
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+    setFbLoginStatus("idle");
   }
 
   async function handleCreate(data: any) {
@@ -83,10 +103,20 @@ export default function SearchConfig() {
         <h1 className="text-2xl font-bold">Saved Searches</h1>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowCookieModal(true)}
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+            onClick={handleFbLogin}
+            disabled={fbLoginStatus === "pending"}
+            title="Opens a Facebook login window on the computer running the server"
+            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
           >
-            FB Cookies
+            {fbLoginStatus === "pending"
+              ? "Waiting for login... (check the browser window)"
+              : "Log in with Facebook"}
+          </button>
+          <button
+            onClick={() => setShowCookieModal(true)}
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+          >
+            Paste Cookies
           </button>
           <button
             onClick={() => setShowForm(true)}
