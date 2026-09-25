@@ -1,7 +1,9 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
+import { fetchRenderedHtml } from "./browser.js";
 
-// eBay's search results page is server-rendered and needs no login.
+// eBay's search results page needs no login, but eBay blocks plain HTTP
+// fetches (403), so pages are loaded through the shared headless browser.
 
 export function parseEbayHtml(html: string): ScrapedListing[] {
   const $ = cheerio.load(html);
@@ -49,19 +51,7 @@ export class EbayScraper implements Scraper {
     const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
     console.log(`Scraping eBay: ${url}`);
 
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    if (!res.ok) {
-      console.error(`eBay returned ${res.status} for ${url}`);
-      return [];
-    }
-
-    const listings = parseEbayHtml(await res.text());
+    const listings = parseEbayHtml(await fetchRenderedHtml(url));
     console.log(`Found ${listings.length} listings on eBay`);
     return listings;
   }
@@ -81,19 +71,7 @@ export async function fetchEbaySoldEstimate(
   });
   const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
 
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  });
-  if (!res.ok) {
-    console.error(`eBay sold search returned ${res.status}`);
-    return null;
-  }
-
-  const sold = parseEbayHtml(await res.text());
+  const sold = parseEbayHtml(await fetchRenderedHtml(url));
   const prices = sold.map((l) => l.price).filter((p) => p > 0).sort((a, b) => a - b);
   if (prices.length < 3) return null; // too few data points to trust
 

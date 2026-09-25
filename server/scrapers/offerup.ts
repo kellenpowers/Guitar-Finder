@@ -28,15 +28,24 @@ export class OfferUpScraper implements Scraper {
       console.log(`Scraping OfferUp: ${url}`);
 
       await page.goto(url, { waitUntil: "domcontentloaded" });
-      await randomDelay(2000, 4000);
+      // OfferUp renders results with JavaScript — wait for item links to appear
+      await page.waitForSelector("a[href*='/item/']", { timeout: 15_000 }).catch(() => {});
+      await randomDelay(1500, 3000);
       for (let i = 0; i < 4; i++) {
         await page.mouse.wheel(0, 1200);
         await randomDelay(800, 1500);
       }
 
-      const anchors = await page.$$("a[href*='/item/detail/']");
+      let anchors = await page.$$("a[href*='/item/detail/']");
       if (anchors.length === 0) {
-        console.warn("No OfferUp item links found — layout may have changed.");
+        anchors = await page.$$("a[href^='/item/']");
+      }
+      if (anchors.length === 0) {
+        const title = await page.title().catch(() => "?");
+        console.warn(
+          `No OfferUp item links found (page title: "${title}") — ` +
+            "OfferUp may be showing a bot check or changed its layout."
+        );
       }
 
       const byId = new Map<string, ScrapedListing>();
@@ -45,7 +54,11 @@ export class OfferUpScraper implements Scraper {
           const href = await anchor.getAttribute("href");
           if (!href) continue;
           // URLs look like /item/detail/<id-or-slug>
-          const externalId = href.match(/\/item\/detail\/([^/?#]+)/)?.[1] || "";
+          const externalId =
+            href.match(/\/item\/detail\/([^/?#]+)/)?.[1] ||
+            href.match(/\/item\/([^/?#]+)/)?.[1] ||
+            "";
+          if (externalId === "detail") continue;
           if (!externalId || byId.has(externalId)) continue;
 
           const text = (await anchor.innerText()) || "";
