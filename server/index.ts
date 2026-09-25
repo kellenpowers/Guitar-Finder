@@ -1,9 +1,16 @@
-import "dotenv/config";
-import express from "express";
-import cors from "cors";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
+// The server runs with cwd=server/ (npm workspaces), but the .env lives in
+// the project root — load both locations so either works.
+const envDir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(envDir, "..", ".env") });
+dotenv.config();
+
+import express from "express";
+import cors from "cors";
 import searchesRouter from "./routes/searches.js";
 import listingsRouter from "./routes/listings.js";
 import pricingRouter from "./routes/pricing.js";

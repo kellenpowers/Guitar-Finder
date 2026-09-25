@@ -22,6 +22,8 @@ function getToken(): string {
 }
 
 export async function checkPrice(query: string): Promise<PriceCheckResult | null> {
+  // Without a token, skip quietly — the caller falls back to eBay sold prices
+  if (!process.env.REVERB_API_TOKEN) return null;
   try {
     // First try the price guide
     const priceGuideResult = await fetchPriceGuide(query);

@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
 import { citySlug } from "./facebook.js";
+import { fetchRenderedHtml } from "./browser.js";
 
 // Craigslist serves a server-rendered fallback (li.cl-static-search-result)
 // that needs no login or JavaScript. The site subdomain (e.g. "austin" in
@@ -8,25 +9,34 @@ import { citySlug } from "./facebook.js";
 
 export function parseCraigslistHtml(html: string): ScrapedListing[] {
   const $ = cheerio.load(html);
-  const listings: ScrapedListing[] = [];
+  const byId = new Map<string, ScrapedListing>();
 
-  $("li.cl-static-search-result").each((_i, el) => {
+  // Craigslist has two markups: the no-JS fallback (cl-static-search-result)
+  // and the rendered app (cl-search-result). Handle both.
+  $("li.cl-static-search-result, li.cl-search-result").each((_i, el) => {
     const card = $(el);
-    const link = card.find("a").first();
-    const href = link.attr("href") || "";
+    const href =
+      card.find("a[href*='.html']").first().attr("href") ||
+      card.find("a").first().attr("href") ||
+      "";
     const externalId = href.match(/\/(\d+)\.html/)?.[1] || "";
-    const title = card.find(".title").text().trim() || card.attr("title") || "";
-    const priceText = card.find(".price").text().trim();
-    const price = parseFloat(priceText.replace(/[$,]/g, "")) || 0;
-    const location = card.find(".location").text().trim();
+    if (!externalId || byId.has(externalId)) return;
 
-    if (externalId && title) {
-      listings.push({
+    const title =
+      card.attr("title") ||
+      card.find(".title, .posting-title .label, .cl-app-anchor .label").first().text().trim();
+    const priceText = card.find(".price, .priceinfo").first().text().trim();
+    const price = parseFloat(priceText.replace(/[$,]/g, "")) || 0;
+    const location = card.find(".location, .meta .separator + span").first().text().trim();
+    const imageUrl = card.find("img").first().attr("src") || "";
+
+    if (title) {
+      byId.set(externalId, {
         externalId,
         title,
         description: "",
         price,
-        imageUrl: "",
+        imageUrl,
         listingUrl: href,
         location,
         postedAt: null,
@@ -34,7 +44,7 @@ export function parseCraigslistHtml(html: string): ScrapedListing[] {
     }
   });
 
-  return listings;
+  return [...byId.values()];
 }
 
 export class CraigslistScraper implements Scraper {
@@ -58,18 +68,7 @@ export class CraigslistScraper implements Scraper {
     const url = `https://${site}.craigslist.org/search/sss?${params.toString()}`;
     console.log(`Scraping Craigslist: ${url}`);
 
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
-    });
-    if (!res.ok) {
-      console.error(`Craigslist returned ${res.status} for ${url}`);
-      return [];
-    }
-
-    const listings = parseCraigslistHtml(await res.text());
+    const listings = parseCraigslistHtml(await fetchRenderedHtml(url));
     console.log(`Found ${listings.length} listings on Craigslist`);
     return listings;
   }
