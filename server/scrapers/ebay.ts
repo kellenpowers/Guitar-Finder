@@ -16,7 +16,8 @@ export function parseEbayHtml(html: string): ScrapedListing[] {
     const title = card.find(".s-item__title").text().trim();
     // Price can be a range like "$100.00 to $150.00" — take the first number
     const priceText = card.find(".s-item__price").first().text();
-    const price = parseFloat(priceText.replace(/[^0-9.]+/g, " ").trim().split(" ")[0]) || 0;
+    const priceMatch = priceText.replace(/,/g, "").match(/\d+(\.\d+)?/);
+    const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
     const imageUrl = card.find(".s-item__image img, .s-item__image-wrapper img").attr("src") || "";
 
     // Skip eBay's "Shop on eBay" placeholder card and cards without a real id

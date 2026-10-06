@@ -7,16 +7,16 @@ export default function Dashboard() {
   const [allListings, setAllListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [searchCount, setSearchCount] = useState(0);
+  const [searches, setSearches] = useState<any[]>([]);
 
   useEffect(() => {
     Promise.all([
       api("/api/listings?sortBy=score").then((r) => r.json()),
       api("/api/searches").then((r) => r.json()),
     ])
-      .then(([listingsData, searches]) => {
+      .then(([listingsData, searchesData]) => {
         setAllListings(listingsData);
-        setSearchCount(searches.length);
+        setSearches(searchesData);
         setLoading(false);
       })
       .catch(() => {
@@ -40,8 +40,15 @@ export default function Dashboard() {
     );
   }
 
-  const deals = allListings.filter((l) => (l.deal_score ?? 0) >= 10);
+  // Each search sets its own "Min Deal Score"; 10% is the fallback
+  const thresholdBySearch = new Map<number, number>(
+    searches.map((s) => [s.id, s.min_deal_score > 0 ? s.min_deal_score : 10])
+  );
+  const deals = allListings.filter(
+    (l) => (l.deal_score ?? 0) >= (thresholdBySearch.get(l.search_id) ?? 10)
+  );
   const hasMarketValues = allListings.some((l) => l.estimated_market_value != null);
+  const searchCount = searches.length;
 
   return (
     <div>

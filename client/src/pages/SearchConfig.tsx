@@ -10,6 +10,7 @@ export default function SearchConfig() {
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [cookieText, setCookieText] = useState("");
   const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
+  const [backfilling, setBackfilling] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [showDefaultsModal, setShowDefaultsModal] = useState(false);
   const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string>>({});
@@ -21,6 +22,22 @@ export default function SearchConfig() {
       .then(setSettings)
       .catch(() => {});
   }, []);
+
+  async function handleBackfill() {
+    setBackfilling(true);
+    try {
+      const res = await api("/api/pricing/backfill", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Value check complete: ${data.checked} of ${data.total} listings got a market value.`);
+      } else {
+        alert(data.error || "Value check failed.");
+      }
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+    setBackfilling(false);
+  }
 
   async function handleSaveDefaults() {
     await api("/api/settings", {
@@ -143,6 +160,14 @@ export default function SearchConfig() {
             className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
           >
             Defaults
+          </button>
+          <button
+            onClick={handleBackfill}
+            disabled={backfilling}
+            title="Estimate market value for listings that don't have one yet (can take a few minutes)"
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 disabled:opacity-50"
+          >
+            {backfilling ? "Checking values..." : "Re-check Values"}
           </button>
           <button
             onClick={() => setShowForm(true)}
