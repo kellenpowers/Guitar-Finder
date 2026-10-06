@@ -10,6 +10,7 @@ router.get("/", (req, res) => {
   let sql = `
     SELECT l.*,
       mp.estimated_market_value,
+      mp.value_source,
       CASE WHEN mp.estimated_market_value > 0
         THEN ROUND((mp.estimated_market_value - l.price) / mp.estimated_market_value * 100, 1)
         ELSE NULL
@@ -20,7 +21,7 @@ router.get("/", (req, res) => {
       END as savings
     FROM listings l
     LEFT JOIN (
-      SELECT listing_id, estimated_market_value,
+      SELECT listing_id, estimated_market_value, value_source,
         ROW_NUMBER() OVER (PARTITION BY listing_id ORDER BY checked_at DESC) as rn
       FROM market_prices
     ) mp ON mp.listing_id = l.id AND mp.rn = 1
@@ -62,6 +63,7 @@ router.get("/:id", (req, res) => {
   const listing = db.prepare(`
     SELECT l.*,
       mp.estimated_market_value,
+      mp.value_source,
       mp.reverb_listings,
       CASE WHEN mp.estimated_market_value > 0
         THEN ROUND((mp.estimated_market_value - l.price) / mp.estimated_market_value * 100, 1)
@@ -69,7 +71,7 @@ router.get("/:id", (req, res) => {
       END as deal_score
     FROM listings l
     LEFT JOIN (
-      SELECT listing_id, estimated_market_value, reverb_listings,
+      SELECT listing_id, estimated_market_value, value_source, reverb_listings,
         ROW_NUMBER() OVER (PARTITION BY listing_id ORDER BY checked_at DESC) as rn
       FROM market_prices
     ) mp ON mp.listing_id = l.id AND mp.rn = 1

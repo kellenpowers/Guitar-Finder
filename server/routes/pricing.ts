@@ -5,11 +5,15 @@ import { getDb } from "../db/index.js";
 
 const router = Router();
 
-function insertMarketPrice(db: any, listing: any, result: { estimatedValue: number; comparables: unknown[] }) {
+function insertMarketPrice(
+  db: any,
+  listing: any,
+  result: { estimatedValue: number; comparables: unknown[]; source: string }
+) {
   db.prepare(`
-    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings)
-    VALUES (?, ?, ?, ?)
-  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables));
+    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source);
 }
 
 // Backfill valuations for every listing that has none (Reverb -> eBay sold)

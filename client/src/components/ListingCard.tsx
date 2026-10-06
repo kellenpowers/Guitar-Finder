@@ -12,9 +12,17 @@ interface ListingCardProps {
     scraped_at: string;
     deal_score: number | null;
     estimated_market_value: number | null;
+    value_source?: string | null;
     savings: number | null;
   };
 }
+
+// Real-sales sources vs. asking-price estimates, so the user knows the quality
+const VALUE_SOURCE_LABELS: Record<string, string> = {
+  reverb_price_guide: "Reverb sales",
+  ebay_sold: "eBay sold",
+  reverb_asking: "Reverb asking",
+};
 
 export default function ListingCard({ listing }: ListingCardProps) {
   return (
@@ -50,6 +58,9 @@ export default function ListingCard({ listing }: ListingCardProps) {
             {listing.estimated_market_value && (
               <span className="text-xs text-gray-500">
                 Est. value: ${listing.estimated_market_value.toLocaleString()}
+                {listing.value_source && VALUE_SOURCE_LABELS[listing.value_source]
+                  ? ` (${VALUE_SOURCE_LABELS[listing.value_source]})`
+                  : ""}
               </span>
             )}
             {listing.savings && listing.savings > 0 && (

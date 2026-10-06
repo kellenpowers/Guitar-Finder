@@ -62,9 +62,11 @@ export const ebayScraper = new EbayScraper();
 
 // Estimate market value from recently SOLD eBay listings (median price).
 // Used as a valuation fallback for items Reverb doesn't cover (cameras, etc.).
-export async function fetchEbaySoldEstimate(
-  query: string
-): Promise<{ estimatedValue: number; comparables: Array<{ title: string; price: number; condition: string; url: string }> } | null> {
+export async function fetchEbaySoldEstimate(query: string): Promise<{
+  estimatedValue: number;
+  comparables: Array<{ title: string; price: number; condition: string; url: string }>;
+  source: string;
+} | null> {
   const params = new URLSearchParams({
     _nkw: query,
     LH_Sold: "1",
@@ -87,5 +89,5 @@ export async function fetchEbaySoldEstimate(
     url: l.listingUrl,
   }));
 
-  return { estimatedValue, comparables };
+  return { estimatedValue, comparables, source: "ebay_sold" };
 }

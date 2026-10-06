@@ -103,9 +103,9 @@ export async function runSearch(search: any): Promise<number> {
             ).get(source, listing.externalId) as any;
             if (listingRow) {
               db.prepare(`
-                INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings)
-                VALUES (?, ?, ?, ?)
-              `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables));
+                INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
+                VALUES (?, ?, ?, ?, ?)
+              `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables), priceResult.source);
             }
           }
         } catch (err) {
