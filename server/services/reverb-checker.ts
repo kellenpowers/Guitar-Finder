@@ -13,6 +13,8 @@ export interface PriceCheckResult {
   source: string;
 }
 
+import { filterRelevant } from "./relevance.js";
+
 const REVERB_API_BASE = "https://api.reverb.com/api";
 
 function reverbHeaders(): Record<string, string> | null {
@@ -60,11 +62,9 @@ export async function checkReverbAskingPrices(query: string): Promise<PriceCheck
   if (!headers) return null;
 
   try {
-    const params = new URLSearchParams({
-      query,
-      per_page: "20",
-      sort: "price|asc",
-    });
+    // Default (relevance) sort — sorting by price returns Reverb's cheapest
+    // items sitewide when the query barely matches, which poisons the median
+    const params = new URLSearchParams({ query, per_page: "20" });
     const res = await fetch(`${REVERB_API_BASE}/listings?${params}`, { headers });
     if (!res.ok) return null;
 
@@ -72,15 +72,19 @@ export async function checkReverbAskingPrices(query: string): Promise<PriceCheck
     const listings = data?.listings;
     if (!listings || listings.length === 0) return null;
 
-    const comparables: ReverbComparable[] = listings.slice(0, 10).map((l: any) => ({
+    const all: ReverbComparable[] = listings.map((l: any) => ({
       title: l.title || "",
       price: parseFloat(l.price?.amount || "0"),
       condition: l.condition?.display_name || "Unknown",
       url: l._links?.web?.href || "",
     }));
 
+    // Reverb's search returns *something* for any query — a DJI camera query
+    // comes back as random guitar parts. Keep only comps that match the item.
+    const comparables = filterRelevant(query, all).slice(0, 10);
+
     const prices = comparables.map((c) => c.price).filter((p) => p > 0).sort((a, b) => a - b);
-    if (prices.length === 0) return null;
+    if (prices.length < 3) return null; // too few matching listings to trust
 
     const mid = Math.floor(prices.length / 2);
     const estimatedValue = prices.length % 2 === 0

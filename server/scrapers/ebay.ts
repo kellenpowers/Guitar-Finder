@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
 import { fetchRenderedHtml } from "./browser.js";
+import { filterRelevant } from "../services/relevance.js";
 
 // eBay's search results page needs no login, but eBay blocks plain HTTP
 // fetches (403), so pages are loaded through the shared headless browser.
@@ -71,12 +72,21 @@ export async function fetchEbaySoldEstimate(query: string): Promise<{
     _nkw: query,
     LH_Sold: "1",
     LH_Complete: "1",
+    _sop: "13", // most recently sold first
   });
   const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
 
-  const sold = parseEbayHtml(await fetchRenderedHtml(url));
+  const html = await fetchRenderedHtml(url);
+  const allSold = parseEbayHtml(html);
+  if (allSold.length === 0) {
+    const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || "?";
+    console.warn(`eBay sold search parsed 0 items (page title: "${pageTitle}")`);
+  }
+
+  // Drop "similar item" noise that doesn't actually match what we're valuing
+  const sold = filterRelevant(query, allSold);
   const prices = sold.map((l) => l.price).filter((p) => p > 0).sort((a, b) => a - b);
-  if (prices.length < 3) return null; // too few data points to trust
+  if (prices.length < 3) return null; // too few matching sales to trust
 
   const mid = Math.floor(prices.length / 2);
   const estimatedValue =
