@@ -171,6 +171,11 @@ export function parseCardLines(
 ): { price: number; title: string; location: string } | null {
   const cleaned = lines.map((l) => l.trim()).filter(Boolean);
 
+  // Marketplaces badge already-gone items right on the card — skip those
+  if (cleaned.some((l) => /^(sold|pending|sale pending|out of stock)$/i.test(l))) {
+    return null;
+  }
+
   const priceLine = cleaned.find((l) => /^\$[\d,]+/.test(l));
   const price = priceLine ? parseFloat(priceLine.replace(/[$,]/g, "")) || 0 : 0;
 

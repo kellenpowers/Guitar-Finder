@@ -38,11 +38,7 @@ export default function SearchConfig() {
     try {
       const res = await api("/api/pricing/backfill", { method: "POST" });
       const data = await res.json();
-      if (res.ok) {
-        alert(`Value check complete: ${data.checked} of ${data.total} listings got a market value.`);
-      } else {
-        alert(data.error || "Value check failed.");
-      }
+      alert(data.message || data.error || "Value check triggered.");
     } catch {
       alert("Couldn't reach the server. Is it running?");
     }

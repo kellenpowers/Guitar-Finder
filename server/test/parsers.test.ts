@@ -32,6 +32,12 @@ describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("ignores blank lines", () => {
     expect(parseCardLines(["", "$75", "", "Boss pedal", " "])?.title).toBe("Boss pedal");
   });
+
+  it("skips cards badged Sold or Pending", () => {
+    expect(parseCardLines(["Sold", "$500", "Canon AE-1 camera", "Savannah, GA"])).toBeNull();
+    expect(parseCardLines(["$500", "Canon AE-1 camera", "PENDING"])).toBeNull();
+    expect(parseCardLines(["$500", "Sold out sign vintage", "Savannah, GA"])).not.toBeNull();
+  });
 });
 
 describe("parseEbayHtml", () => {

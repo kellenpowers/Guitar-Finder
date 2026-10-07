@@ -22,6 +22,14 @@ import { startScheduler } from "./services/scheduler.js";
 import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { getDb } from "./db/index.js";
 
+// A stray error from a background scrape must never kill the whole app
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection (continuing):", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception (continuing):", err);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
