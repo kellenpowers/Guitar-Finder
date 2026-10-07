@@ -1,9 +1,14 @@
 # Guitar Deal Finder — project rules
 
-A personal deal-finding app that runs on the owner's computer. It searches
-Facebook Marketplace, Craigslist, eBay, OfferUp, and Reverb for saved
-searches, estimates market value (Reverb price data → eBay sold-listings
-median fallback), and scores deals on a dashboard.
+A personal reselling-arbitrage app that runs on the owner's computer. Its job
+is finding items on local marketplaces that can be profitably resold
+nationally. An hourly **discovery** sweep (`server/services/discovery.ts`)
+browses high-resale categories newest-first on Facebook Marketplace and
+Craigslist — no keywords — plus optional saved keyword searches across all
+five sources (FB, Craigslist, eBay, OfferUp, Reverb). Every find is valued
+against real sold prices (Reverb price guide → eBay sold median → Reverb
+asking as labeled last resort), and the dashboard ranks by estimated profit
+after resale fees and shipping (`server/services/profit.ts`).
 
 ## Hard rules
 

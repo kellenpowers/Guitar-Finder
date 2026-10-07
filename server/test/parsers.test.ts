@@ -3,6 +3,7 @@ import { parseCardLines, citySlug } from "../scrapers/facebook.js";
 import { parseEbayHtml } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
+import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
 
 describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("parses price, title, and location", () => {
@@ -116,6 +117,17 @@ describe("scoreDeal", () => {
 
   it("returns null without a market value", () => {
     expect(scoreDeal(500, 0)).toBeNull();
+  });
+});
+
+describe("estimateProfit", () => {
+  it("subtracts resale fees and shipping from the sale", () => {
+    expect(estimateProfit(800, 500)).toBe(
+      Math.round(800 * (1 - RESALE_FEE_PCT) - SHIPPING_EST - 500)
+    );
+  });
+  it("goes negative when the flip loses money", () => {
+    expect(estimateProfit(100, 200)).toBeLessThan(0);
   });
 });
 

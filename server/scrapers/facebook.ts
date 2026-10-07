@@ -68,75 +68,100 @@ export class FacebookMarketplaceScraper implements Scraper {
 
     try {
       const page = await context.newPage();
-
-      const loadAndCollect = async (url: string) => {
-        console.log(`Scraping Facebook Marketplace: ${url}`);
-        await page.goto(url, { waitUntil: "domcontentloaded" });
-        await randomDelay(2000, 4000);
-        for (let i = 0; i < 5; i++) {
-          await page.mouse.wheel(0, 1200);
-          await randomDelay(1000, 2000);
-        }
-        // Find every listing link on the page instead of relying on Facebook's
-        // container structure, which changes often and silently breaks parsing.
-        return page.$$("a[href*='/marketplace/item/']");
-      };
-
-      let anchors = await loadAndCollect(buildSearchUrl(options));
+      let anchors = await loadAndCollect(page, buildSearchUrl(options));
 
       // A wrong city slug can land on an empty page — retry without location
       if (anchors.length === 0 && citySlug(options.location)) {
         console.warn("No results with location slug — retrying without location.");
-        anchors = await loadAndCollect(buildSearchUrl({ ...options, location: "" }));
+        anchors = await loadAndCollect(page, buildSearchUrl({ ...options, location: "" }));
       }
-      if (anchors.length === 0) {
-        console.warn(
-          "No Marketplace item links found — Facebook may have changed its layout, " +
-            "or the saved session is logged out (try logging in again)."
-        );
-      }
+      warnIfEmpty(anchors.length);
 
-      const byId = new Map<string, ScrapedListing>();
-
-      for (const anchor of anchors) {
-        try {
-          const href = await anchor.getAttribute("href");
-          if (!href) continue;
-
-          const externalId = href.match(/\/item\/(\d+)/)?.[1] || "";
-          if (!externalId || byId.has(externalId)) continue;
-
-          const listingUrl = `https://www.facebook.com/marketplace/item/${externalId}`;
-
-          const text = (await anchor.innerText()) || "";
-          const parsed = parseCardLines(text.split("\n"));
-          if (!parsed) continue;
-
-          const imgEl = await anchor.$("img");
-          const imageUrl = imgEl ? (await imgEl.getAttribute("src")) || "" : "";
-
-          byId.set(externalId, {
-            externalId,
-            title: parsed.title,
-            description: "",
-            price: parsed.price,
-            imageUrl,
-            listingUrl,
-            location: parsed.location,
-            postedAt: null,
-          });
-        } catch {
-          // Skip cards that fail to parse
-        }
-      }
-
-      const listings = [...byId.values()];
+      const listings = await parseAnchors(anchors);
       console.log(`Found ${listings.length} listings on Facebook Marketplace`);
       return listings;
     } finally {
       await browser.close();
     }
   }
+
+  // Scrape an arbitrary Marketplace URL (e.g. a category browse page) — used
+  // by discovery sweeps. Same logged-in session, scrolling, and parsing.
+  async scrapeUrl(url: string): Promise<ScrapedListing[]> {
+    const { browser, context } = await this.getContext();
+    try {
+      const page = await context.newPage();
+      const anchors = await loadAndCollect(page, url);
+      warnIfEmpty(anchors.length);
+      const listings = await parseAnchors(anchors);
+      console.log(`Found ${listings.length} listings on Facebook Marketplace`);
+      return listings;
+    } finally {
+      await browser.close();
+    }
+  }
+}
+
+async function loadAndCollect(page: import("playwright").Page, url: string) {
+  console.log(`Scraping Facebook Marketplace: ${url}`);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await randomDelay(2000, 4000);
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, 1200);
+    await randomDelay(1000, 2000);
+  }
+  // Find every listing link on the page instead of relying on Facebook's
+  // container structure, which changes often and silently breaks parsing.
+  return page.$$("a[href*='/marketplace/item/']");
+}
+
+function warnIfEmpty(count: number) {
+  if (count === 0) {
+    console.warn(
+      "No Marketplace item links found — Facebook may have changed its layout, " +
+        "or the saved session is logged out (try logging in again)."
+    );
+  }
+}
+
+async function parseAnchors(
+  anchors: Array<import("playwright").ElementHandle<SVGElement | HTMLElement>>
+): Promise<ScrapedListing[]> {
+  const byId = new Map<string, ScrapedListing>();
+
+  for (const anchor of anchors) {
+    try {
+      const href = await anchor.getAttribute("href");
+      if (!href) continue;
+
+      const externalId = href.match(/\/item\/(\d+)/)?.[1] || "";
+      if (!externalId || byId.has(externalId)) continue;
+
+      const listingUrl = `https://www.facebook.com/marketplace/item/${externalId}`;
+
+      const text = (await anchor.innerText()) || "";
+      const parsed = parseCardLines(text.split("\n"));
+      if (!parsed) continue;
+
+      const imgEl = await anchor.$("img");
+      const imageUrl = imgEl ? (await imgEl.getAttribute("src")) || "" : "";
+
+      byId.set(externalId, {
+        externalId,
+        title: parsed.title,
+        description: "",
+        price: parsed.price,
+        imageUrl,
+        listingUrl,
+        location: parsed.location,
+        postedAt: null,
+      });
+    } catch {
+      // Skip cards that fail to parse
+    }
+  }
+
+  return [...byId.values()];
 }
 
 // Facebook card text renders as lines like ["$500", "Canon AE-1 camera", "Austin, TX"].

@@ -16,6 +16,7 @@ interface ListingCardProps {
     estimated_market_value: number | null;
     value_source?: string | null;
     savings: number | null;
+    est_profit?: number | null;
   };
 }
 
@@ -95,10 +96,17 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   {sourceLabel ? ` (${sourceLabel})` : ""}
                 </span>
               )}
-              {listing.savings && listing.savings > 0 && (
-                <span className="text-xs text-green-600 font-medium">
-                  Save ${listing.savings.toLocaleString()}
+              {listing.est_profit != null && listing.est_profit > 0 ? (
+                <span className="text-xs text-green-600 font-bold">
+                  ~${listing.est_profit.toLocaleString()} profit after fees
                 </span>
+              ) : (
+                listing.savings != null &&
+                listing.savings > 0 && (
+                  <span className="text-xs text-green-600 font-medium">
+                    Save ${listing.savings.toLocaleString()}
+                  </span>
+                )
               )}
               {listing.estimated_market_value && (
                 <button
