@@ -1,7 +1,19 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
-import { fetchRenderedHtml } from "./browser.js";
+import { fetchRenderedHtml, pageTitleOf } from "./browser.js";
 import { filterRelevant } from "../services/relevance.js";
+
+// Load an eBay page, waiting for result cards; if eBay serves its bot-check
+// "Error Page", back off and retry once before giving up.
+async function fetchEbayHtml(url: string): Promise<string> {
+  let html = await fetchRenderedHtml(url, 2000, ".s-item");
+  if (pageTitleOf(html).includes("Error Page")) {
+    console.warn("eBay served its error page (bot check) — retrying once...");
+    await new Promise((r) => setTimeout(r, 4000 + Math.random() * 3000));
+    html = await fetchRenderedHtml(url, 2000, ".s-item");
+  }
+  return html;
+}
 
 // eBay's search results page needs no login, but eBay blocks plain HTTP
 // fetches (403), so pages are loaded through the shared headless browser.
@@ -53,8 +65,13 @@ export class EbayScraper implements Scraper {
     const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
     console.log(`Scraping eBay: ${url}`);
 
-    const listings = parseEbayHtml(await fetchRenderedHtml(url));
-    console.log(`Found ${listings.length} listings on eBay`);
+    const html = await fetchEbayHtml(url);
+    const listings = parseEbayHtml(html);
+    if (listings.length === 0) {
+      console.warn(`eBay search parsed 0 items (page title: "${pageTitleOf(html)}")`);
+    } else {
+      console.log(`Found ${listings.length} listings on eBay`);
+    }
     return listings;
   }
 }
@@ -76,11 +93,10 @@ export async function fetchEbaySoldEstimate(query: string): Promise<{
   });
   const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
 
-  const html = await fetchRenderedHtml(url);
+  const html = await fetchEbayHtml(url);
   const allSold = parseEbayHtml(html);
   if (allSold.length === 0) {
-    const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || "?";
-    console.warn(`eBay sold search parsed 0 items (page title: "${pageTitle}")`);
+    console.warn(`eBay sold search parsed 0 items (page title: "${pageTitleOf(html)}")`);
   }
 
   // Drop "similar item" noise that doesn't actually match what we're valuing

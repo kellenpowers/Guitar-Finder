@@ -11,10 +11,24 @@ let browserPromise: Promise<Browser> | null = null;
 
 function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true });
+    // channel "chromium" = full Chromium in new-headless mode, which looks far
+    // more like a real browser than the default headless shell (eBay serves
+    // its error page to the shell)
+    browserPromise = chromium
+      .launch({ headless: true, channel: "chromium" })
+      .catch(() => chromium.launch({ headless: true }));
   }
   return browserPromise;
 }
+
+// Basic automation-detection masking: real-browser values for the fields
+// bot checks probe first
+const STEALTH_SCRIPT = `
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+  Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+  window.chrome = window.chrome || { runtime: {} };
+`;
 
 // Load a URL in the shared browser and return the rendered HTML. When
 // waitForSelector is given, wait up to 12s for it (results rendered by
@@ -25,8 +39,15 @@ export async function fetchRenderedHtml(
   waitForSelector?: string
 ): Promise<string> {
   const browser = await getBrowser();
-  const context = await browser.newContext({ userAgent: USER_AGENT });
+  const context = await browser.newContext({
+    userAgent: USER_AGENT,
+    viewport: { width: 1366, height: 900 },
+    locale: "en-US",
+    timezoneId: "America/New_York",
+    extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+  });
   try {
+    await context.addInitScript(STEALTH_SCRIPT);
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     if (waitForSelector) {
