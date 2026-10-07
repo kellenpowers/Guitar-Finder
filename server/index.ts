@@ -19,6 +19,7 @@ import { facebookScraper } from "./scrapers/facebook.js";
 import { saveCookies } from "./scrapers/facebook.js";
 import { runSearch } from "./services/scheduler.js";
 import { startScheduler } from "./services/scheduler.js";
+import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { getDb } from "./db/index.js";
 
 const app = express();
@@ -76,6 +77,15 @@ app.post("/api/scrape/facebook/cookies", async (req, res) => {
     console.error("Cookie save failed:", err);
     res.status(500).json({ error: "Failed to save cookies" });
   }
+});
+
+// Kick off a discovery sweep now (runs in the background; results appear as found)
+app.post("/api/discovery/run", (_req, res) => {
+  if (isDiscoveryRunning()) {
+    return res.status(409).json({ error: "A discovery sweep is already running" });
+  }
+  runDiscovery().catch((err) => console.error("Manual discovery failed:", err));
+  res.json({ ok: true, message: "Discovery sweep started — new flips will appear on the Dashboard as they're found (takes a few minutes)." });
 });
 
 // Trigger a manual scrape for a specific search

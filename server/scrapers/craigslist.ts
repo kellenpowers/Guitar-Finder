@@ -74,4 +74,17 @@ export class CraigslistScraper implements Scraper {
   }
 }
 
+// Browse a craigslist section (e.g. "ela" = electronics) newest-first — used
+// by discovery sweeps. Section codes: https://<site>.craigslist.org/search/<code>
+export async function scrapeCraigslistSection(
+  site: string,
+  section: string
+): Promise<ScrapedListing[]> {
+  const url = `https://${site}.craigslist.org/search/${section}?sort=date`;
+  console.log(`Scraping Craigslist section: ${url}`);
+  const listings = parseCraigslistHtml(await fetchRenderedHtml(url));
+  console.log(`Found ${listings.length} listings on Craigslist (${section})`);
+  return listings;
+}
+
 export const craigslistScraper = new CraigslistScraper();

@@ -6,6 +6,7 @@ import { ebayScraper } from "../scrapers/ebay.js";
 import { reverbScraper } from "../scrapers/reverb.js";
 import { offerUpScraper } from "../scrapers/offerup.js";
 import { estimateValue } from "./valuation.js";
+import { runDiscovery, DISCOVERY_CRON } from "./discovery.js";
 import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
 
 const scrapers: Scraper[] = [
@@ -27,6 +28,15 @@ export function startScheduler(): void {
   }
 
   console.log(`Scheduler started with ${searches.length} active searches`);
+
+  // Discovery: automatic category sweeps, hourly plus a kick shortly after boot
+  cron.schedule(DISCOVERY_CRON, () => {
+    runDiscovery().catch((err) => console.error("Scheduled discovery failed:", err));
+  });
+  setTimeout(() => {
+    runDiscovery().catch((err) => console.error("Boot discovery failed:", err));
+  }, 20_000);
+  console.log("Discovery sweeps scheduled (hourly; first sweep starts in ~20s)");
 }
 
 export function scheduleSearch(search: any): void {

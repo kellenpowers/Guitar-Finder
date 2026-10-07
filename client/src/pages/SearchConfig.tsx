@@ -23,6 +23,16 @@ export default function SearchConfig() {
       .catch(() => {});
   }, []);
 
+  async function handleDiscovery() {
+    try {
+      const res = await api("/api/discovery/run", { method: "POST" });
+      const data = await res.json();
+      alert(data.message || data.error || "Discovery triggered.");
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+  }
+
   async function handleBackfill() {
     setBackfilling(true);
     try {
@@ -160,6 +170,13 @@ export default function SearchConfig() {
             className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
           >
             Defaults
+          </button>
+          <button
+            onClick={handleDiscovery}
+            title="Sweep local marketplaces by category right now instead of waiting for the hourly run"
+            className="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+          >
+            Run Discovery
           </button>
           <button
             onClick={handleBackfill}

@@ -3,20 +3,21 @@ import { Link } from "react-router-dom";
 import ListingCard from "../components/ListingCard";
 import { api } from "../api";
 
+// ===== Tunables =====
+// A listing qualifies as a flip when its estimated profit (after resale fees
+// and shipping) clears this many dollars.
+const MIN_PROFIT = 50;
+
 export default function Dashboard() {
   const [allListings, setAllListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [searches, setSearches] = useState<any[]>([]);
 
   useEffect(() => {
-    Promise.all([
-      api("/api/listings?sortBy=score").then((r) => r.json()),
-      api("/api/searches").then((r) => r.json()),
-    ])
-      .then(([listingsData, searchesData]) => {
+    api("/api/listings?sortBy=profit")
+      .then((r) => r.json())
+      .then((listingsData) => {
         setAllListings(listingsData);
-        setSearches(searchesData);
         setLoading(false);
       })
       .catch(() => {
@@ -40,63 +41,52 @@ export default function Dashboard() {
     );
   }
 
-  // Each search sets its own "Min Deal Score"; 10% is the fallback
-  const thresholdBySearch = new Map<number, number>(
-    searches.map((s) => [s.id, s.min_deal_score > 0 ? s.min_deal_score : 10])
-  );
-  const deals = allListings.filter(
-    (l) => (l.deal_score ?? 0) >= (thresholdBySearch.get(l.search_id) ?? 10)
-  );
-  const hasMarketValues = allListings.some((l) => l.estimated_market_value != null);
-  const searchCount = searches.length;
+  const flips = allListings.filter((l) => (l.est_profit ?? -Infinity) >= MIN_PROFIT);
+  const valuedCount = allListings.filter((l) => l.estimated_market_value != null).length;
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Top Deals</h1>
+        <h1 className="text-2xl font-bold">Top Flips</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {searchCount} active searches / {allListings.length} listings scraped /{" "}
-          {deals.length} deals found
+          {allListings.length} listings found / {valuedCount} valued /{" "}
+          {flips.length} flips worth ${MIN_PROFIT}+ profit
         </p>
       </div>
 
-      {deals.length === 0 ? (
+      {flips.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border">
           {allListings.length === 0 ? (
             <>
               <p className="text-gray-500">No listings yet.</p>
               <p className="text-sm text-gray-400 mt-1">
-                Go to{" "}
+                Discovery sweeps your local marketplaces automatically every hour
+                while the app is running — the first sweep starts shortly after
+                launch. You can also add targeted{" "}
                 <Link to="/searches" className="text-indigo-600 hover:underline">
-                  Searches
-                </Link>{" "}
-                to create a search and run a scrape.
+                  searches
+                </Link>
+                .
               </p>
             </>
           ) : (
             <>
               <p className="text-gray-500">
-                {allListings.length} listings scraped, but none scored as a deal yet.
+                Nothing clearing ${MIN_PROFIT} profit after fees yet.
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                Browse everything on the{" "}
+                Discovery keeps sweeping hourly. Browse everything on the{" "}
                 <Link to="/listings" className="text-indigo-600 hover:underline">
                   All Listings
                 </Link>{" "}
                 page.
               </p>
-              {!hasMarketValues && (
-                <p className="text-sm text-amber-600 mt-3 max-w-md mx-auto">
-                  Deal scoring is off because no Reverb prices were found. Add your
-                  REVERB_API_TOKEN to the .env file (see README), then re-run a scrape.
-                </p>
-              )}
             </>
           )}
         </div>
       ) : (
         <div className="space-y-3">
-          {deals.map((listing) => (
+          {flips.map((listing) => (
             <ListingCard key={listing.id} listing={listing} />
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
+import { RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
 
 const router = Router();
 
@@ -18,7 +19,11 @@ router.get("/", (req, res) => {
       CASE WHEN mp.estimated_market_value > 0
         THEN ROUND(mp.estimated_market_value - l.price, 2)
         ELSE NULL
-      END as savings
+      END as savings,
+      CASE WHEN mp.estimated_market_value > 0
+        THEN ROUND(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price)
+        ELSE NULL
+      END as est_profit
     FROM listings l
     LEFT JOIN (
       SELECT listing_id, estimated_market_value, value_source,
@@ -44,7 +49,9 @@ router.get("/", (req, res) => {
     params.push(Number(minScore));
   }
 
-  if (sortBy === "score") {
+  if (sortBy === "profit") {
+    sql += " ORDER BY est_profit DESC NULLS LAST";
+  } else if (sortBy === "score") {
     sql += " ORDER BY deal_score DESC NULLS LAST";
   } else if (sortBy === "price") {
     sql += " ORDER BY l.price ASC";

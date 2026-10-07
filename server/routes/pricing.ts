@@ -16,14 +16,19 @@ function insertMarketPrice(
   `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source);
 }
 
-// Backfill valuations for every listing that has none (Reverb -> eBay sold)
+// Backfill valuations for listings that have none, and re-check ones whose
+// current estimate came from Reverb asking prices (the garbage-prone source)
 router.post("/backfill", async (_req, res) => {
   try {
     const db = getDb();
     const listings = db.prepare(`
-      SELECT l.* FROM listings l
-      LEFT JOIN market_prices mp ON mp.listing_id = l.id
-      WHERE mp.id IS NULL
+      SELECT l.*, mp.value_source as prior_source FROM listings l
+      LEFT JOIN (
+        SELECT listing_id, value_source,
+          ROW_NUMBER() OVER (PARTITION BY listing_id ORDER BY checked_at DESC) as rn
+        FROM market_prices
+      ) mp ON mp.listing_id = l.id AND mp.rn = 1
+      WHERE mp.listing_id IS NULL OR mp.value_source = 'reverb_asking'
     `).all() as any[];
 
     let checked = 0;
@@ -32,6 +37,9 @@ router.post("/backfill", async (_req, res) => {
       if (result) {
         insertMarketPrice(db, listing, result);
         checked++;
+      } else if (listing.prior_source === "reverb_asking") {
+        // No trustworthy data found — better unvalued than wrongly valued
+        db.prepare("DELETE FROM market_prices WHERE listing_id = ?").run(listing.id);
       }
       await new Promise((r) => setTimeout(r, 1000));
     }

@@ -3,6 +3,8 @@ import { parseCardLines, citySlug } from "../scrapers/facebook.js";
 import { parseEbayHtml } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
+import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
+import { filterRelevant, significantTokens } from "../services/relevance.js";
 
 describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("parses price, title, and location", () => {
@@ -116,6 +118,51 @@ describe("scoreDeal", () => {
 
   it("returns null without a market value", () => {
     expect(scoreDeal(500, 0)).toBeNull();
+  });
+});
+
+describe("estimateProfit", () => {
+  it("subtracts resale fees and shipping from the sale", () => {
+    expect(estimateProfit(800, 500)).toBe(
+      Math.round(800 * (1 - RESALE_FEE_PCT) - SHIPPING_EST - 500)
+    );
+  });
+  it("goes negative when the flip loses money", () => {
+    expect(estimateProfit(100, 200)).toBeLessThan(0);
+  });
+});
+
+describe("filterRelevant (comp relevance)", () => {
+  const comps = [
+    { title: "DJI Osmo Action 4 Camera with accessories" },
+    { title: "DJI Osmo Action 4 Standard Combo" },
+    { title: "Fender Stratocaster neck plate chrome" },
+    { title: "Guitar bridge saddle screws (6)" },
+  ];
+
+  it("keeps matching comps and drops unrelated ones", () => {
+    const kept = filterRelevant("DJI Osmo Action 4", comps);
+    expect(kept).toHaveLength(2);
+    expect(kept.every((c) => c.title.includes("DJI"))).toBe(true);
+  });
+
+  it("drops guitar parts for a camera query", () => {
+    expect(filterRelevant("Sony ZV-E10 mirrorless camera", comps)).toHaveLength(0);
+  });
+
+  it("ignores filler words when tokenizing", () => {
+    expect(significantTokens("New Sony camera with great condition OBO")).toEqual(
+      expect.arrayContaining(["sony", "camera"])
+    );
+    expect(significantTokens("new with for the obo")).toHaveLength(0);
+  });
+
+  it("matches despite filler in the query", () => {
+    const kept = filterRelevant(
+      "OBO like new DJI Osmo Action 4 great condition",
+      comps
+    );
+    expect(kept).toHaveLength(2);
   });
 });
 
