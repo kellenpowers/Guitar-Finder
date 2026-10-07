@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
 import { citySlug } from "./facebook.js";
-import { fetchRenderedHtml } from "./browser.js";
+import { fetchRenderedHtml, pageTitleOf } from "./browser.js";
 
 // Craigslist serves a server-rendered fallback (li.cl-static-search-result)
 // that needs no login or JavaScript. The site subdomain (e.g. "austin" in
@@ -11,9 +11,10 @@ export function parseCraigslistHtml(html: string): ScrapedListing[] {
   const $ = cheerio.load(html);
   const byId = new Map<string, ScrapedListing>();
 
-  // Craigslist has two markups: the no-JS fallback (cl-static-search-result)
-  // and the rendered app (cl-search-result). Handle both.
-  $("li.cl-static-search-result, li.cl-search-result").each((_i, el) => {
+  // Craigslist has several markups: the no-JS fallback (cl-static-search-result),
+  // the rendered app (cl-search-result), and gallery cards. Handle all of them,
+  // on any tag.
+  $(".cl-static-search-result, .cl-search-result, .gallery-card").each((_i, el) => {
     const card = $(el);
     const href =
       card.find("a[href*='.html']").first().attr("href") ||
@@ -24,7 +25,11 @@ export function parseCraigslistHtml(html: string): ScrapedListing[] {
 
     const title =
       card.attr("title") ||
-      card.find(".title, .posting-title .label, .cl-app-anchor .label").first().text().trim();
+      card
+        .find(".title, .titlestring, .posting-title .label, .cl-app-anchor .label")
+        .first()
+        .text()
+        .trim();
     const priceText = card.find(".price, .priceinfo").first().text().trim();
     const price = parseFloat(priceText.replace(/[$,]/g, "")) || 0;
     const location = card.find(".location, .meta .separator + span").first().text().trim();
@@ -67,10 +72,7 @@ export class CraigslistScraper implements Scraper {
 
     const url = `https://${site}.craigslist.org/search/sss?${params.toString()}`;
     console.log(`Scraping Craigslist: ${url}`);
-
-    const listings = parseCraigslistHtml(await fetchRenderedHtml(url));
-    console.log(`Found ${listings.length} listings on Craigslist`);
-    return listings;
+    return fetchAndParse(url);
   }
 }
 
@@ -82,8 +84,28 @@ export async function scrapeCraigslistSection(
 ): Promise<ScrapedListing[]> {
   const url = `https://${site}.craigslist.org/search/${section}?sort=date`;
   console.log(`Scraping Craigslist section: ${url}`);
-  const listings = parseCraigslistHtml(await fetchRenderedHtml(url));
-  console.log(`Found ${listings.length} listings on Craigslist (${section})`);
+  return fetchAndParse(url);
+}
+
+// Results render via JavaScript — wait for them, and when none appear say
+// what page Craigslist actually served so the failure is diagnosable.
+const RESULT_SELECTORS = ".cl-search-result, .cl-static-search-result, .gallery-card";
+
+async function fetchAndParse(url: string): Promise<ScrapedListing[]> {
+  const html = await fetchRenderedHtml(url, 1500, RESULT_SELECTORS);
+  const listings = parseCraigslistHtml(html);
+  if (listings.length === 0) {
+    const postingLinks = (html.match(/\/d\/[^"]*\/\d+\.html/g) || []).length;
+    console.warn(
+      `Craigslist returned 0 parseable results (page title: "${pageTitleOf(html)}", ` +
+        `posting links in page: ${postingLinks}) — ` +
+        (postingLinks > 0
+          ? "markup changed, parser needs updating."
+          : "likely a bot check, wrong site subdomain, or genuinely no results.")
+    );
+  } else {
+    console.log(`Found ${listings.length} listings on Craigslist`);
+  }
   return listings;
 }
 

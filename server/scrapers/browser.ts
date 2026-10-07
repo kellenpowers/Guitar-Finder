@@ -16,16 +16,29 @@ function getBrowser(): Promise<Browser> {
   return browserPromise;
 }
 
-// Load a URL in the shared browser and return the rendered HTML.
-export async function fetchRenderedHtml(url: string, waitMs = 2500): Promise<string> {
+// Load a URL in the shared browser and return the rendered HTML. When
+// waitForSelector is given, wait up to 12s for it (results rendered by
+// JavaScript), then settle briefly before snapshotting.
+export async function fetchRenderedHtml(
+  url: string,
+  waitMs = 2500,
+  waitForSelector?: string
+): Promise<string> {
   const browser = await getBrowser();
   const context = await browser.newContext({ userAgent: USER_AGENT });
   try {
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    if (waitForSelector) {
+      await page.waitForSelector(waitForSelector, { timeout: 12_000 }).catch(() => {});
+    }
     await page.waitForTimeout(waitMs);
     return await page.content();
   } finally {
     await context.close();
   }
+}
+
+export function pageTitleOf(html: string): string {
+  return html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || "?";
 }
