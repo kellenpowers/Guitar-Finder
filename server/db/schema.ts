@@ -53,6 +53,15 @@ export function initSchema(db: Database.Database): void {
   `);
 
   migrateSourceCheck(db);
+  migrateValueSource(db);
+}
+
+// Adds market_prices.value_source (which data backed the estimate) to older DBs
+function migrateValueSource(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(market_prices)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "value_source")) {
+    db.exec("ALTER TABLE market_prices ADD COLUMN value_source TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 // Older databases restricted listings.source to ('facebook', 'craigslist'),
