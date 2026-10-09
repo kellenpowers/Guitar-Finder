@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ListingCard from "../components/ListingCard";
-import { api } from "../api";
+import { api, isCloud, getSnapshotUpdatedAt } from "../api";
+
+function updatedAgo(): string | null {
+  const ts = getSnapshotUpdatedAt();
+  if (!ts) return null;
+  const mins = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+  if (mins < 1) return "updated just now";
+  if (mins < 60) return `updated ${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  return `updated ${hours} hour${hours === 1 ? "" : "s"} ago`;
+}
 
 // ===== Tunables =====
 // A listing makes the Top Flips board when its Flip Score (0-100, combining
@@ -96,6 +106,9 @@ export default function Dashboard() {
             {view === "top"
               ? `${allListings.length} listings found / ${valuedCount} valued / ${flips.length} flips scoring ${MIN_FLIP_SCORE}+`
               : `${trips.length} towns with profitable pickups — one drive grabs them all`}
+            {isCloud && updatedAgo() && (
+              <span className="text-gray-400"> · {updatedAgo()}</span>
+            )}
           </p>
         </div>
         <div className="flex rounded-lg border overflow-hidden text-sm">

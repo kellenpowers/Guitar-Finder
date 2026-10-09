@@ -1,8 +1,24 @@
 import { useEffect, useState } from "react";
 import SearchForm from "../components/SearchForm";
-import { api } from "../api";
+import { api, isCloud } from "../api";
 
 export default function SearchConfig() {
+  if (isCloud) {
+    return (
+      <div className="text-center py-12 bg-white rounded-lg border">
+        <p className="text-gray-700 font-medium">This is the read-only cloud view.</p>
+        <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+          Searches, discovery sweeps, Facebook login, and value re-checks run on
+          the studio computer. It publishes fresh findings here automatically
+          after every sweep.
+        </p>
+      </div>
+    );
+  }
+  return <SearchConfigInner />;
+}
+
+function SearchConfigInner() {
   const [searches, setSearches] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
