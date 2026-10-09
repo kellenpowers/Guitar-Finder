@@ -2,9 +2,7 @@
 # Double-click me to download the latest version and start Flip Finder
 cd "$(dirname "$0")"
 
-echo "Stopping any old copy..."
-kill $(lsof -ti :3001) 2>/dev/null
-sleep 1
+source scripts/stop-app.sh
 
 echo ""
 echo "=== Downloading the latest version ==="
