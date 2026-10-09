@@ -121,7 +121,7 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running — open http://localhost:${PORT}`);
 
   // Initialize DB on startup
@@ -129,4 +129,16 @@ app.listen(PORT, () => {
 
   // Start the scheduler
   startScheduler();
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `\nAnother copy of Flip Finder is already running on port ${PORT}.\n` +
+        `Close its window, or double-click "Start Flip Finder.command" — it stops the old copy first.\n`
+    );
+  } else {
+    console.error("Server failed to start:", err);
+  }
+  process.exit(1);
 });
