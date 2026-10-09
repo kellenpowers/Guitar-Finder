@@ -47,6 +47,12 @@ export function initSchema(db: Database.Database): void {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS geocache (
+      place TEXT PRIMARY KEY,
+      lat REAL NOT NULL,
+      lon REAL NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
     CREATE INDEX IF NOT EXISTS idx_listings_source_external ON listings(source, external_id);
     CREATE INDEX IF NOT EXISTS idx_market_prices_listing_id ON market_prices(listing_id);
@@ -65,6 +71,11 @@ function migrateValueSource(db: Database.Database): void {
   }
   if (!cols.some((c) => c.name === "sales_per_week")) {
     db.exec("ALTER TABLE market_prices ADD COLUMN sales_per_week REAL");
+  }
+
+  const listingCols = db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>;
+  if (!listingCols.some((c) => c.name === "distance_miles")) {
+    db.exec("ALTER TABLE listings ADD COLUMN distance_miles REAL");
   }
 }
 

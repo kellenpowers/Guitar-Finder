@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { estimateValue } from "../services/valuation.js";
+import { applyDistances } from "../services/distance.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { getDb } from "../db/index.js";
 
@@ -48,6 +49,7 @@ router.post("/backfill", (_req, res) => {
   });
 
   (async () => {
+    await applyDistances().catch((err) => console.error("Distance pass failed:", err));
     let checked = 0;
     for (const [i, listing] of listings.entries()) {
       const result = await estimateValue(listing.title);

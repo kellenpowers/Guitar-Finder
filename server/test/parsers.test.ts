@@ -5,7 +5,8 @@ import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
 import { filterRelevant, significantTokens } from "../services/relevance.js";
-import { computeFlipScore } from "../services/flip-score.js";
+import { computeFlipScore, distancePart } from "../services/flip-score.js";
+import { haversineMiles } from "../services/distance.js";
 
 describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("parses price, title, and location", () => {
@@ -169,6 +170,26 @@ describe("estimateProfit", () => {
   it("goes negative when the flip loses money", () => {
     expect(estimateProfit(100, 200)).toBeLessThan(0);
   });
+  it("charges the round-trip drive against the profit", () => {
+    const near = estimateProfit(800, 500, 0);
+    const far = estimateProfit(800, 500, 100);
+    expect(near - far).toBe(130); // 200 miles round trip at $0.65/mi
+  });
+});
+
+describe("distance", () => {
+  it("haversine: Savannah to Atlanta is roughly 215 miles", () => {
+    const miles = haversineMiles(32.0809, -81.0912, 33.749, -84.388);
+    expect(miles).toBeGreaterThan(190);
+    expect(miles).toBeLessThan(230);
+  });
+  it("distancePart: near is full marks, far is zero, unknown is neutral", () => {
+    expect(distancePart(10)).toBe(1);
+    expect(distancePart(150)).toBe(0);
+    expect(distancePart(null)).toBe(0.7);
+    const mid = distancePart(67.5); // halfway between 15 and 120
+    expect(mid).toBeCloseTo(0.5, 1);
+  });
 });
 
 describe("filterRelevant (comp relevance)", () => {
@@ -208,15 +229,27 @@ describe("filterRelevant (comp relevance)", () => {
 describe("computeFlipScore", () => {
   it("maxes out a perfect flip", () => {
     expect(
-      computeFlipScore({ estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold" })
+      computeFlipScore({
+        estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold", distanceMiles: 5,
+      })
     ).toBe(100);
   });
 
   it("scores a middling flip in the middle", () => {
-    // 0.5*0.5 + 0.2*0.5 + 0.2*0.5 + 0.1*0.4 = 0.49
+    // 0.45*0.5 + 0.15*0.5 + 0.2*0.5 + 0.1*0.4 + 0.1*0.7 = 0.51
     expect(
       computeFlipScore({ estProfit: 150, price: 300, salesPerWeek: null, valueSource: "reverb_asking" })
-    ).toBe(49);
+    ).toBe(51);
+  });
+
+  it("penalizes long drives", () => {
+    const near = computeFlipScore({
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", distanceMiles: 10,
+    })!;
+    const far = computeFlipScore({
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", distanceMiles: 130,
+    })!;
+    expect(near - far).toBe(10); // the full distance weight
   });
 
   it("is 0 for unprofitable items and null without a value", () => {

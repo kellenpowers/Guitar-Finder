@@ -1,17 +1,21 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
-import { RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
+import { RESALE_FEE_PCT, SHIPPING_EST, DRIVE_COST_PER_MILE } from "../services/profit.js";
 import {
-  W_PROFIT, W_ROI, W_VELOCITY, W_CONFIDENCE,
+  W_PROFIT, W_ROI, W_VELOCITY, W_CONFIDENCE, W_DISTANCE,
   PROFIT_FULL_MARKS, ROI_FULL_MARKS, VELOCITY_FULL_MARKS, VELOCITY_UNKNOWN,
+  DISTANCE_NEAR, DISTANCE_FAR, DISTANCE_UNKNOWN,
   SOURCE_CONFIDENCE, SOURCE_CONFIDENCE_DEFAULT,
 } from "../services/flip-score.js";
 
 const router = Router();
 
-// SQL mirror of services/flip-score.ts computeFlipScore, built from the same
-// constants so there is one set of tunables
-const PROFIT_EXPR = `(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price)`;
+// SQL mirror of services/flip-score.ts computeFlipScore and
+// services/profit.ts estimateProfit, built from the same constants so there
+// is one set of tunables
+const PROFIT_EXPR = `(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price - COALESCE(l.distance_miles, 0) * ${2 * DRIVE_COST_PER_MILE})`;
+const DISTANCE_EXPR = `(CASE WHEN l.distance_miles IS NULL THEN ${DISTANCE_UNKNOWN}
+  ELSE MIN(MAX((${DISTANCE_FAR} - l.distance_miles) / ${DISTANCE_FAR - DISTANCE_NEAR}.0, 0), 1) END)`;
 const FLIP_SCORE_EXPR = `
       CASE
         WHEN mp.estimated_market_value > 0 AND ${PROFIT_EXPR} <= 0 THEN 0
@@ -24,7 +28,8 @@ const FLIP_SCORE_EXPR = `
                              WHEN 'ebay_sold' THEN ${SOURCE_CONFIDENCE.ebay_sold}
                              WHEN 'reverb_price_guide' THEN ${SOURCE_CONFIDENCE.reverb_price_guide}
                              WHEN 'reverb_asking' THEN ${SOURCE_CONFIDENCE.reverb_asking}
-                             ELSE ${SOURCE_CONFIDENCE_DEFAULT} END)
+                             ELSE ${SOURCE_CONFIDENCE_DEFAULT} END) +
+          ${W_DISTANCE} * ${DISTANCE_EXPR}
         ))
         ELSE NULL
       END`;
@@ -47,7 +52,7 @@ router.get("/", (req, res) => {
         ELSE NULL
       END as savings,
       CASE WHEN mp.estimated_market_value > 0
-        THEN ROUND(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price)
+        THEN ROUND(${PROFIT_EXPR})
         ELSE NULL
       END as est_profit,
       ${FLIP_SCORE_EXPR} as flip_score
