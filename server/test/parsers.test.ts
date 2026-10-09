@@ -183,11 +183,11 @@ describe("distance", () => {
     expect(miles).toBeGreaterThan(190);
     expect(miles).toBeLessThan(230);
   });
-  it("distancePart: near is full marks, far is zero, unknown is neutral", () => {
-    expect(distancePart(10)).toBe(1);
-    expect(distancePart(150)).toBe(0);
+  it("distancePart: short drives are full marks, long are zero, unknown neutral", () => {
+    expect(distancePart(10)).toBe(1); // 10-minute drive
+    expect(distancePart(150)).toBe(0); // 2.5-hour drive
     expect(distancePart(null)).toBe(0.7);
-    const mid = distancePart(67.5); // halfway between 15 and 120
+    const mid = distancePart(70); // halfway between 20 and 120 minutes
     expect(mid).toBeCloseTo(0.5, 1);
   });
 });
@@ -230,7 +230,7 @@ describe("computeFlipScore", () => {
   it("maxes out a perfect flip", () => {
     expect(
       computeFlipScore({
-        estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold", distanceMiles: 5,
+        estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold", driveMinutes: 10,
       })
     ).toBe(100);
   });
@@ -244,10 +244,10 @@ describe("computeFlipScore", () => {
 
   it("penalizes long drives", () => {
     const near = computeFlipScore({
-      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", distanceMiles: 10,
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", driveMinutes: 15,
     })!;
     const far = computeFlipScore({
-      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", distanceMiles: 130,
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", driveMinutes: 150,
     })!;
     expect(near - far).toBe(10); // the full distance weight
   });

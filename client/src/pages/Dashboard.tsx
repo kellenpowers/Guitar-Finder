@@ -16,6 +16,7 @@ const PICKUP_SOURCES = new Set(["facebook", "craigslist", "offerup"]);
 interface TripGroup {
   location: string;
   distance: number | null;
+  driveMinutes: number | null;
   listings: any[];
   totalProfit: number;
 }
@@ -29,6 +30,7 @@ function groupByTrip(listings: any[]): TripGroup[] {
     const group: TripGroup = groups.get(key) || {
       location: l.location.trim(),
       distance: l.distance_miles ?? null,
+      driveMinutes: l.drive_minutes ?? null,
       listings: [],
       totalProfit: 0,
     };
@@ -36,6 +38,9 @@ function groupByTrip(listings: any[]): TripGroup[] {
     group.totalProfit += l.est_profit ?? 0;
     if (group.distance == null && l.distance_miles != null) {
       group.distance = l.distance_miles;
+    }
+    if (group.driveMinutes == null && l.drive_minutes != null) {
+      group.driveMinutes = l.drive_minutes;
     }
     groups.set(key, group);
   }
@@ -165,7 +170,11 @@ export default function Dashboard() {
                   {trip.listings.length}{" "}
                   {trip.listings.length === 1 ? "pickup" : "pickups"} · ~$
                   {Math.round(trip.totalProfit).toLocaleString()} total profit
-                  {trip.distance != null && ` · ${Math.round(trip.distance)} mi away`}
+                  {trip.driveMinutes != null
+                    ? ` · ~${Math.round(trip.driveMinutes)} min drive`
+                    : trip.distance != null
+                      ? ` · ${Math.round(trip.distance)} mi away`
+                      : ""}
                 </span>
               </div>
               <div className="space-y-3">

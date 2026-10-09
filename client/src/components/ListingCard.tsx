@@ -20,6 +20,7 @@ interface ListingCardProps {
     sales_per_week?: number | null;
     flip_score?: number | null;
     distance_miles?: number | null;
+    drive_minutes?: number | null;
   };
 }
 
@@ -178,10 +179,18 @@ export default function ListingCard({ listing }: ListingCardProps) {
                 }[listing.source] || listing.source}
               </span>
               {listing.location && <span>{listing.location}</span>}
-              {listing.distance_miles != null && (
+              {listing.drive_minutes != null ? (
                 <span className="font-medium">
-                  {Math.round(listing.distance_miles)} mi away
+                  ~{Math.round(listing.drive_minutes)} min drive
+                  {listing.distance_miles != null &&
+                    ` (${Math.round(listing.distance_miles)} mi)`}
                 </span>
+              ) : (
+                listing.distance_miles != null && (
+                  <span className="font-medium">
+                    {Math.round(listing.distance_miles)} mi away
+                  </span>
+                )
               )}
               <span>{new Date(listing.scraped_at).toLocaleDateString()}</span>
             </div>

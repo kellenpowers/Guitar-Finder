@@ -10,8 +10,8 @@ export const PROFIT_FULL_MARKS = 300; // $300+ profit maxes the profit part
 export const ROI_FULL_MARKS = 1.0; // 100% return maxes the ROI part
 export const VELOCITY_FULL_MARKS = 3; // 3+ sales/week maxes the velocity part
 export const VELOCITY_UNKNOWN = 0.5; // neutral when sale dates are unavailable
-export const DISTANCE_NEAR = 15; // within this many miles = full marks
-export const DISTANCE_FAR = 120; // at/beyond this = zero (a 2h+ drive each way)
+export const DRIVE_NEAR_MINUTES = 20; // within a 20-minute drive = full marks
+export const DRIVE_FAR_MINUTES = 120; // a 2h+ drive each way = zero
 export const DISTANCE_UNKNOWN = 0.7; // shipped or unknown location
 
 // How much to trust each valuation source
@@ -27,12 +27,15 @@ export interface FlipScoreInput {
   price: number;
   salesPerWeek: number | null;
   valueSource: string | null;
-  distanceMiles?: number | null;
+  driveMinutes?: number | null;
 }
 
-export function distancePart(miles: number | null | undefined): number {
-  if (miles == null) return DISTANCE_UNKNOWN;
-  return Math.min(Math.max((DISTANCE_FAR - miles) / (DISTANCE_FAR - DISTANCE_NEAR), 0), 1);
+export function distancePart(driveMinutes: number | null | undefined): number {
+  if (driveMinutes == null) return DISTANCE_UNKNOWN;
+  return Math.min(
+    Math.max((DRIVE_FAR_MINUTES - driveMinutes) / (DRIVE_FAR_MINUTES - DRIVE_NEAR_MINUTES), 0),
+    1
+  );
 }
 
 // The same formula is inlined (via these constants) in routes/listings.ts SQL.
@@ -55,6 +58,6 @@ export function computeFlipScore(input: FlipScoreInput): number | null {
         W_ROI * roiPart +
         W_VELOCITY * velocityPart +
         W_CONFIDENCE * confidencePart +
-        W_DISTANCE * distancePart(input.distanceMiles))
+        W_DISTANCE * distancePart(input.driveMinutes))
   );
 }

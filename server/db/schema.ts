@@ -53,6 +53,14 @@ export function initSchema(db: Database.Database): void {
       lon REAL NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS routecache (
+      place TEXT NOT NULL,
+      home TEXT NOT NULL,
+      drive_miles REAL NOT NULL,
+      drive_minutes REAL NOT NULL,
+      PRIMARY KEY (place, home)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
     CREATE INDEX IF NOT EXISTS idx_listings_source_external ON listings(source, external_id);
     CREATE INDEX IF NOT EXISTS idx_market_prices_listing_id ON market_prices(listing_id);
@@ -76,6 +84,12 @@ function migrateValueSource(db: Database.Database): void {
   const listingCols = db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>;
   if (!listingCols.some((c) => c.name === "distance_miles")) {
     db.exec("ALTER TABLE listings ADD COLUMN distance_miles REAL");
+  }
+  if (!listingCols.some((c) => c.name === "drive_minutes")) {
+    db.exec("ALTER TABLE listings ADD COLUMN drive_minutes REAL");
+    // Old distances were straight-line; null them so the next pass recomputes
+    // everything with real driving routes
+    db.exec("UPDATE listings SET distance_miles = NULL");
   }
 }
 

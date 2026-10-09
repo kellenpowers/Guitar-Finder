@@ -4,7 +4,7 @@ import { RESALE_FEE_PCT, SHIPPING_EST, DRIVE_COST_PER_MILE } from "../services/p
 import {
   W_PROFIT, W_ROI, W_VELOCITY, W_CONFIDENCE, W_DISTANCE,
   PROFIT_FULL_MARKS, ROI_FULL_MARKS, VELOCITY_FULL_MARKS, VELOCITY_UNKNOWN,
-  DISTANCE_NEAR, DISTANCE_FAR, DISTANCE_UNKNOWN,
+  DRIVE_NEAR_MINUTES, DRIVE_FAR_MINUTES, DISTANCE_UNKNOWN,
   SOURCE_CONFIDENCE, SOURCE_CONFIDENCE_DEFAULT,
 } from "../services/flip-score.js";
 
@@ -14,8 +14,8 @@ const router = Router();
 // services/profit.ts estimateProfit, built from the same constants so there
 // is one set of tunables
 const PROFIT_EXPR = `(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price - COALESCE(l.distance_miles, 0) * ${2 * DRIVE_COST_PER_MILE})`;
-const DISTANCE_EXPR = `(CASE WHEN l.distance_miles IS NULL THEN ${DISTANCE_UNKNOWN}
-  ELSE MIN(MAX((${DISTANCE_FAR} - l.distance_miles) / ${DISTANCE_FAR - DISTANCE_NEAR}.0, 0), 1) END)`;
+const DISTANCE_EXPR = `(CASE WHEN l.drive_minutes IS NULL THEN ${DISTANCE_UNKNOWN}
+  ELSE MIN(MAX((${DRIVE_FAR_MINUTES} - l.drive_minutes) / ${DRIVE_FAR_MINUTES - DRIVE_NEAR_MINUTES}.0, 0), 1) END)`;
 const FLIP_SCORE_EXPR = `
       CASE
         WHEN mp.estimated_market_value > 0 AND ${PROFIT_EXPR} <= 0 THEN 0
