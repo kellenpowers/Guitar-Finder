@@ -4,7 +4,8 @@ import { parseEbayHtml, computeSalesPerWeek } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
-import { filterRelevant, significantTokens } from "../services/relevance.js";
+import { filterRelevant, significantTokens, normalizeQuery } from "../services/relevance.js";
+import { trimOutliers, median } from "../services/stats.js";
 import { computeFlipScore, distancePart } from "../services/flip-score.js";
 import { haversineMiles } from "../services/distance.js";
 
@@ -223,6 +224,52 @@ describe("filterRelevant (comp relevance)", () => {
       comps
     );
     expect(kept).toHaveLength(2);
+  });
+
+  it("short tokens match whole words only — 'ae' must not match 'aerial'", () => {
+    const cameraComps = [
+      { title: "Canon AE-1 Program 35mm Film Camera" },
+      { title: "Aerial drone photography camera kit" },
+    ];
+    const kept = filterRelevant("Canon AE-1 camera", cameraComps);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].title).toContain("AE-1");
+  });
+
+  it("requires the model code to appear when the query has one", () => {
+    const kept = filterRelevant("Sony ZV-E10 camera", [
+      { title: "Sony Alpha a6000 Mirrorless Camera" },
+    ]);
+    expect(kept).toHaveLength(0);
+  });
+});
+
+describe("normalizeQuery", () => {
+  it("strips marketing noise and filler", () => {
+    expect(normalizeQuery("WOW Must Sell!! Sony ZV-E10 camera OBO firm price")).toBe(
+      "sony zv e10 camera"
+    );
+  });
+  it("caps runaway titles at 8 significant tokens", () => {
+    const q = normalizeQuery(
+      "Canon AE-1 Program 35mm film camera body chrome strap manual box extra battery bundle"
+    );
+    expect(q.split(" ").length).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("trimOutliers / median", () => {
+  it("drops the $1 parts sale and the $3000 bundle", () => {
+    const kept = trimOutliers([1, 240, 250, 260, 270, 3000]);
+    expect(kept).toEqual([240, 250, 260, 270]);
+  });
+  it("leaves small sets alone", () => {
+    expect(trimOutliers([100, 200, 900])).toEqual([100, 200, 900]);
+  });
+  it("median of even and odd sets", () => {
+    expect(median([100, 200])).toBe(150);
+    expect(median([100, 200, 900])).toBe(200);
+    expect(median([])).toBeNull();
   });
 });
 

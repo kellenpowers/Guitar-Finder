@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
 import { fetchRenderedHtml, pageTitleOf } from "./browser.js";
 import { filterRelevant } from "../services/relevance.js";
+import { trimOutliers, median } from "../services/stats.js";
 
 // Load an eBay page, waiting for result cards; if eBay serves its bot-check
 // "Error Page", back off and retry once before giving up.
@@ -116,14 +117,14 @@ export async function fetchEbaySoldEstimate(query: string): Promise<{
     console.warn(`eBay sold search parsed 0 items (page title: "${pageTitleOf(html)}")`);
   }
 
-  // Drop "similar item" noise that doesn't actually match what we're valuing
+  // Drop "similar item" noise that doesn't actually match what we're valuing,
+  // then outlier sales (parts-only cheapies, inflated bundles) before the median
   const sold = filterRelevant(query, allSold);
-  const prices = sold.map((l) => l.price).filter((p) => p > 0).sort((a, b) => a - b);
+  const prices = trimOutliers(sold.map((l) => l.price));
   if (prices.length < 3) return null; // too few matching sales to trust
 
-  const mid = Math.floor(prices.length / 2);
-  const estimatedValue =
-    prices.length % 2 === 0 ? (prices[mid - 1] + prices[mid]) / 2 : prices[mid];
+  const estimatedValue = median(prices);
+  if (estimatedValue == null) return null;
 
   const comparables = sold.slice(0, 10).map((l) => ({
     title: l.title,

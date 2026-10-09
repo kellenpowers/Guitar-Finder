@@ -1,10 +1,20 @@
 // Pushes the latest findings to the private cloud site after each sweep,
 // so the phone app works away from home. Does nothing unless PUBLISH_URL
 // and PUBLISH_KEY are set in .env.
+let warnedDisabled = false;
+
 export async function publishSnapshot(): Promise<void> {
   const url = process.env.PUBLISH_URL;
   const key = process.env.PUBLISH_KEY;
-  if (!url || !key) return;
+  if (!url || !key) {
+    if (!warnedDisabled) {
+      console.warn(
+        "Cloud publishing DISABLED — PUBLISH_URL/PUBLISH_KEY not set in .env, so the phone site will not update."
+      );
+      warnedDisabled = true;
+    }
+    return;
+  }
 
   try {
     const port = process.env.PORT || 3001;
