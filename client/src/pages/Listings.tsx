@@ -5,7 +5,7 @@ import { api } from "../api";
 export default function Listings() {
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState("profit");
+  const [sortBy, setSortBy] = useState("flip");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState("");
 
@@ -35,6 +35,7 @@ export default function Listings() {
             onChange={(e) => setSortBy(e.target.value)}
             className="text-sm border rounded p-1.5"
           >
+            <option value="flip">Flip Score</option>
             <option value="profit">Highest Profit</option>
             <option value="score">Best Deals (%)</option>
             <option value="price">Lowest Price</option>

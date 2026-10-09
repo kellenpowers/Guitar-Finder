@@ -7,6 +7,7 @@ import { reverbScraper } from "../scrapers/reverb.js";
 import { offerUpScraper } from "../scrapers/offerup.js";
 import { estimateValue } from "./valuation.js";
 import { runDiscovery, DISCOVERY_CRON } from "./discovery.js";
+import { applyDistances } from "./distance.js";
 import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
 
 const scrapers: Scraper[] = [
@@ -113,9 +114,9 @@ export async function runSearch(search: any): Promise<number> {
             ).get(source, listing.externalId) as any;
             if (listingRow) {
               db.prepare(`
-                INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
-                VALUES (?, ?, ?, ?, ?)
-              `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables), priceResult.source);
+                INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+                VALUES (?, ?, ?, ?, ?, ?)
+              `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables), priceResult.source, priceResult.salesPerWeek ?? null);
             }
           }
         } catch (err) {
@@ -126,6 +127,8 @@ export async function runSearch(search: any): Promise<number> {
       }
     }
   }
+
+  await applyDistances().catch((err) => console.error("Distance pass failed:", err));
 
   console.log(`Search "${search.name}": found ${totalFound} listings, ${newCount} new`);
   return newCount;

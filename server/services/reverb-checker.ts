@@ -11,6 +11,9 @@ export interface PriceCheckResult {
   // Where the estimate came from: "reverb_price_guide" (real Reverb sales),
   // "ebay_sold" (real eBay sales), or "reverb_asking" (asking prices — weakest)
   source: string;
+  // How often this item sells (per week), when the source's sale dates allow
+  // computing it — currently only eBay sold data carries dates
+  salesPerWeek?: number | null;
 }
 
 import { filterRelevant } from "./relevance.js";

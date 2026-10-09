@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { estimateValue } from "../services/valuation.js";
+import { applyDistances } from "../services/distance.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { getDb } from "../db/index.js";
 
@@ -8,12 +9,12 @@ const router = Router();
 function insertMarketPrice(
   db: any,
   listing: any,
-  result: { estimatedValue: number; comparables: unknown[]; source: string }
+  result: { estimatedValue: number; comparables: unknown[]; source: string; salesPerWeek?: number | null }
 ) {
   db.prepare(`
-    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source);
+    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null);
 }
 
 // Backfill valuations for listings that have none, and re-check ones whose
@@ -48,6 +49,7 @@ router.post("/backfill", (_req, res) => {
   });
 
   (async () => {
+    await applyDistances().catch((err) => console.error("Distance pass failed:", err));
     let checked = 0;
     for (const [i, listing] of listings.entries()) {
       const result = await estimateValue(listing.title);

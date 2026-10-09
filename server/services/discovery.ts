@@ -2,6 +2,7 @@ import { getDb } from "../db/index.js";
 import { facebookScraper, citySlug } from "../scrapers/facebook.js";
 import { scrapeCraigslistSection } from "../scrapers/craigslist.js";
 import { estimateValue } from "./valuation.js";
+import { applyDistances } from "./distance.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
@@ -116,6 +117,8 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
       }
     }
 
+    await applyDistances().catch((err) => console.error("Distance pass failed:", err));
+
     // Phase 2: value the freshest unvalued discovery finds against sold prices
     const unvalued = db.prepare(`
       SELECT l.* FROM listings l
@@ -127,8 +130,8 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
 
     let valued = 0;
     const priceStmt = db.prepare(`
-      INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const listing of unvalued) {
       try {
@@ -136,7 +139,7 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
         if (result) {
           priceStmt.run(
             listing.id, listing.title, result.estimatedValue,
-            JSON.stringify(result.comparables), result.source
+            JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null
           );
           valued++;
         }

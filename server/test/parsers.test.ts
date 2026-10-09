@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { parseCardLines, citySlug } from "../scrapers/facebook.js";
-import { parseEbayHtml } from "../scrapers/ebay.js";
+import { parseEbayHtml, computeSalesPerWeek } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
 import { filterRelevant, significantTokens } from "../services/relevance.js";
+import { computeFlipScore, distancePart } from "../services/flip-score.js";
+import { haversineMiles } from "../services/distance.js";
 
 describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("parses price, title, and location", () => {
@@ -69,6 +71,38 @@ describe("parseEbayHtml", () => {
   it("skips cards without an item id", () => {
     const html = `<li class="s-item"><a class="s-item__link" href="https://www.ebay.com/other"></a><div class="s-item__title">No id</div></li>`;
     expect(parseEbayHtml(html)).toHaveLength(0);
+  });
+
+  it("extracts the sold date from sold-listing captions", () => {
+    const html = `
+      <li class="s-item">
+        <a class="s-item__link" href="https://www.ebay.com/itm/444"></a>
+        <div class="s-item__title">Canon AE-1</div>
+        <span class="s-item__price">$150.00</span>
+        <div class="s-item__caption"><span>Sold  Oct 5, 2026</span></div>
+      </li>`;
+    const [item] = parseEbayHtml(html);
+    expect(item.postedAt).toContain("2026-10-05");
+  });
+});
+
+describe("computeSalesPerWeek", () => {
+  const day = 86_400_000;
+  it("computes rate from sale timestamps", () => {
+    // 5 sales over 7 days = 5/week
+    const now = Date.now();
+    const ts = [now, now - 2 * day, now - 3 * day, now - 5 * day, now - 7 * day];
+    expect(computeSalesPerWeek(ts)).toBe(5);
+  });
+  it("flags slow movers", () => {
+    const now = Date.now();
+    // 3 sales over 90 days ≈ 0.2/week
+    const rate = computeSalesPerWeek([now, now - 45 * day, now - 90 * day]);
+    expect(rate).toBeLessThan(0.5);
+  });
+  it("needs at least 3 dated sales", () => {
+    expect(computeSalesPerWeek([Date.now(), Date.now() - day])).toBeNull();
+    expect(computeSalesPerWeek([Date.now(), NaN, NaN])).toBeNull();
   });
 });
 
@@ -136,6 +170,26 @@ describe("estimateProfit", () => {
   it("goes negative when the flip loses money", () => {
     expect(estimateProfit(100, 200)).toBeLessThan(0);
   });
+  it("charges the round-trip drive against the profit", () => {
+    const near = estimateProfit(800, 500, 0);
+    const far = estimateProfit(800, 500, 100);
+    expect(near - far).toBe(130); // 200 miles round trip at $0.65/mi
+  });
+});
+
+describe("distance", () => {
+  it("haversine: Savannah to Atlanta is roughly 215 miles", () => {
+    const miles = haversineMiles(32.0809, -81.0912, 33.749, -84.388);
+    expect(miles).toBeGreaterThan(190);
+    expect(miles).toBeLessThan(230);
+  });
+  it("distancePart: short drives are full marks, long are zero, unknown neutral", () => {
+    expect(distancePart(10)).toBe(1); // 10-minute drive
+    expect(distancePart(150)).toBe(0); // 2.5-hour drive
+    expect(distancePart(null)).toBe(0.7);
+    const mid = distancePart(70); // halfway between 20 and 120 minutes
+    expect(mid).toBeCloseTo(0.5, 1);
+  });
 });
 
 describe("filterRelevant (comp relevance)", () => {
@@ -169,6 +223,48 @@ describe("filterRelevant (comp relevance)", () => {
       comps
     );
     expect(kept).toHaveLength(2);
+  });
+});
+
+describe("computeFlipScore", () => {
+  it("maxes out a perfect flip", () => {
+    expect(
+      computeFlipScore({
+        estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold", driveMinutes: 10,
+      })
+    ).toBe(100);
+  });
+
+  it("scores a middling flip in the middle", () => {
+    // 0.45*0.5 + 0.15*0.5 + 0.2*0.5 + 0.1*0.4 + 0.1*0.7 = 0.51
+    expect(
+      computeFlipScore({ estProfit: 150, price: 300, salesPerWeek: null, valueSource: "reverb_asking" })
+    ).toBe(51);
+  });
+
+  it("penalizes long drives", () => {
+    const near = computeFlipScore({
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", driveMinutes: 15,
+    })!;
+    const far = computeFlipScore({
+      estProfit: 150, price: 300, salesPerWeek: 1, valueSource: "ebay_sold", driveMinutes: 150,
+    })!;
+    expect(near - far).toBe(10); // the full distance weight
+  });
+
+  it("is 0 for unprofitable items and null without a value", () => {
+    expect(
+      computeFlipScore({ estProfit: -20, price: 100, salesPerWeek: 5, valueSource: "ebay_sold" })
+    ).toBe(0);
+    expect(
+      computeFlipScore({ estProfit: null, price: 100, salesPerWeek: null, valueSource: null })
+    ).toBeNull();
+  });
+
+  it("rewards high ROI on cheap items", () => {
+    const cheap = computeFlipScore({ estProfit: 100, price: 50, salesPerWeek: 1, valueSource: "ebay_sold" })!;
+    const pricey = computeFlipScore({ estProfit: 100, price: 1000, salesPerWeek: 1, valueSource: "ebay_sold" })!;
+    expect(cheap).toBeGreaterThan(pricey);
   });
 });
 

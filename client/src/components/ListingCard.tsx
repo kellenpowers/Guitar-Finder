@@ -17,7 +17,56 @@ interface ListingCardProps {
     value_source?: string | null;
     savings: number | null;
     est_profit?: number | null;
+    sales_per_week?: number | null;
+    flip_score?: number | null;
+    distance_miles?: number | null;
+    drive_minutes?: number | null;
   };
+}
+
+function FlipScoreChip({ score }: { score?: number | null }) {
+  if (score == null) return null;
+  const tone =
+    score >= 70
+      ? "bg-emerald-600 text-white"
+      : score >= 50
+        ? "bg-green-100 text-green-800"
+        : score >= 30
+          ? "bg-gray-100 text-gray-600"
+          : "bg-red-50 text-red-600";
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tone}`}>
+      Flip Score {score}
+    </span>
+  );
+}
+
+// ===== Sales-velocity tunables =====
+// At or above FAST = quick flip; below SLOW = you'll sit on it a while
+const FAST_SALES_PER_WEEK = 2;
+const SLOW_SALES_PER_WEEK = 0.5;
+
+function VelocityBadge({ salesPerWeek }: { salesPerWeek?: number | null }) {
+  if (salesPerWeek == null) return null;
+  if (salesPerWeek >= FAST_SALES_PER_WEEK) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+        Fast seller · ~{salesPerWeek}/wk
+      </span>
+    );
+  }
+  if (salesPerWeek < SLOW_SALES_PER_WEEK) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+        Slow seller · ~{salesPerWeek}/wk
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+      Sells ~{salesPerWeek}/wk
+    </span>
+  );
 }
 
 interface Comparable {
@@ -72,10 +121,10 @@ export default function ListingCard({ listing }: ListingCardProps) {
             <img
               src={listing.image_url}
               alt={listing.title}
-              className="w-44 h-44 object-cover flex-shrink-0"
+              className="w-28 h-28 sm:w-44 sm:h-44 object-cover flex-shrink-0"
             />
           ) : (
-            <div className="w-44 h-44 bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <div className="w-28 h-28 sm:w-44 sm:h-44 bg-gray-200 flex items-center justify-center flex-shrink-0">
               <span className="text-gray-400 text-xs">No image</span>
             </div>
           )}
@@ -89,6 +138,7 @@ export default function ListingCard({ listing }: ListingCardProps) {
               </span>
             </div>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <FlipScoreChip score={listing.flip_score} />
               <DealBadge score={listing.deal_score} />
               {listing.estimated_market_value && (
                 <span className="text-xs text-gray-500">
@@ -96,6 +146,7 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   {sourceLabel ? ` (${sourceLabel})` : ""}
                 </span>
               )}
+              <VelocityBadge salesPerWeek={listing.sales_per_week} />
               {listing.est_profit != null && listing.est_profit > 0 ? (
                 <span className="text-xs text-green-600 font-bold">
                   ~${listing.est_profit.toLocaleString()} profit after fees
@@ -128,6 +179,19 @@ export default function ListingCard({ listing }: ListingCardProps) {
                 }[listing.source] || listing.source}
               </span>
               {listing.location && <span>{listing.location}</span>}
+              {listing.drive_minutes != null ? (
+                <span className="font-medium">
+                  ~{Math.round(listing.drive_minutes)} min drive
+                  {listing.distance_miles != null &&
+                    ` (${Math.round(listing.distance_miles)} mi)`}
+                </span>
+              ) : (
+                listing.distance_miles != null && (
+                  <span className="font-medium">
+                    {Math.round(listing.distance_miles)} mi away
+                  </span>
+                )
+              )}
               <span>{new Date(listing.scraped_at).toLocaleDateString()}</span>
             </div>
             <div className="mt-2 text-xs text-indigo-500">
