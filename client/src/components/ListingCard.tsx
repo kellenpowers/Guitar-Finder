@@ -121,10 +121,10 @@ export default function ListingCard({ listing }: ListingCardProps) {
             <img
               src={listing.image_url}
               alt={listing.title}
-              className="w-44 h-44 object-cover flex-shrink-0"
+              className="w-28 h-28 sm:w-44 sm:h-44 object-cover flex-shrink-0"
             />
           ) : (
-            <div className="w-44 h-44 bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <div className="w-28 h-28 sm:w-44 sm:h-44 bg-gray-200 flex items-center justify-center flex-shrink-0">
               <span className="text-gray-400 text-xs">No image</span>
             </div>
           )}

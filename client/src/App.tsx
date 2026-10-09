@@ -7,9 +7,9 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <nav className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-6">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 sm:gap-6 flex-wrap">
           <Link to="/" className="text-xl font-bold text-indigo-600">
-            Deal Finder
+            Flip Finder
           </Link>
           <Link to="/" className="text-sm text-gray-600 hover:text-gray-900">
             Dashboard
