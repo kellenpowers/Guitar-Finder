@@ -5,6 +5,7 @@ import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
 import { filterRelevant, significantTokens } from "../services/relevance.js";
+import { computeFlipScore } from "../services/flip-score.js";
 
 describe("parseCardLines (Facebook/OfferUp card text)", () => {
   it("parses price, title, and location", () => {
@@ -201,6 +202,36 @@ describe("filterRelevant (comp relevance)", () => {
       comps
     );
     expect(kept).toHaveLength(2);
+  });
+});
+
+describe("computeFlipScore", () => {
+  it("maxes out a perfect flip", () => {
+    expect(
+      computeFlipScore({ estProfit: 300, price: 300, salesPerWeek: 3, valueSource: "ebay_sold" })
+    ).toBe(100);
+  });
+
+  it("scores a middling flip in the middle", () => {
+    // 0.5*0.5 + 0.2*0.5 + 0.2*0.5 + 0.1*0.4 = 0.49
+    expect(
+      computeFlipScore({ estProfit: 150, price: 300, salesPerWeek: null, valueSource: "reverb_asking" })
+    ).toBe(49);
+  });
+
+  it("is 0 for unprofitable items and null without a value", () => {
+    expect(
+      computeFlipScore({ estProfit: -20, price: 100, salesPerWeek: 5, valueSource: "ebay_sold" })
+    ).toBe(0);
+    expect(
+      computeFlipScore({ estProfit: null, price: 100, salesPerWeek: null, valueSource: null })
+    ).toBeNull();
+  });
+
+  it("rewards high ROI on cheap items", () => {
+    const cheap = computeFlipScore({ estProfit: 100, price: 50, salesPerWeek: 1, valueSource: "ebay_sold" })!;
+    const pricey = computeFlipScore({ estProfit: 100, price: 1000, salesPerWeek: 1, valueSource: "ebay_sold" })!;
+    expect(cheap).toBeGreaterThan(pricey);
   });
 });
 

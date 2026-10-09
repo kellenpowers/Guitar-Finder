@@ -18,7 +18,25 @@ interface ListingCardProps {
     savings: number | null;
     est_profit?: number | null;
     sales_per_week?: number | null;
+    flip_score?: number | null;
   };
+}
+
+function FlipScoreChip({ score }: { score?: number | null }) {
+  if (score == null) return null;
+  const tone =
+    score >= 70
+      ? "bg-emerald-600 text-white"
+      : score >= 50
+        ? "bg-green-100 text-green-800"
+        : score >= 30
+          ? "bg-gray-100 text-gray-600"
+          : "bg-red-50 text-red-600";
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tone}`}>
+      Flip Score {score}
+    </span>
+  );
 }
 
 // ===== Sales-velocity tunables =====
@@ -118,6 +136,7 @@ export default function ListingCard({ listing }: ListingCardProps) {
               </span>
             </div>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <FlipScoreChip score={listing.flip_score} />
               <DealBadge score={listing.deal_score} />
               {listing.estimated_market_value && (
                 <span className="text-xs text-gray-500">

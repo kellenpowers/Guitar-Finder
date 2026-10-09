@@ -4,12 +4,9 @@ import ListingCard from "../components/ListingCard";
 import { api } from "../api";
 
 // ===== Tunables =====
-// A listing qualifies as a flip when its estimated profit (after resale fees
-// and shipping) clears this many dollars.
-const MIN_PROFIT = 50;
-// Flips selling slower than this (per week on eBay) sink to the bottom —
-// profit you'd sit on for months ranks below profit that moves.
-const SLOW_SALES_PER_WEEK = 0.5;
+// A listing makes the Top Flips board when its Flip Score (0-100, combining
+// profit, ROI, sales velocity, and data confidence) clears this bar.
+const MIN_FLIP_SCORE = 50;
 
 export default function Dashboard() {
   const [allListings, setAllListings] = useState<any[]>([]);
@@ -17,7 +14,7 @@ export default function Dashboard() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    api("/api/listings?sortBy=profit")
+    api("/api/listings?sortBy=flip")
       .then((r) => r.json())
       .then((listingsData) => {
         setAllListings(listingsData);
@@ -44,13 +41,7 @@ export default function Dashboard() {
     );
   }
 
-  const flips = allListings
-    .filter((l) => (l.est_profit ?? -Infinity) >= MIN_PROFIT)
-    .sort((a, b) => {
-      const aSlow = a.sales_per_week != null && a.sales_per_week < SLOW_SALES_PER_WEEK ? 1 : 0;
-      const bSlow = b.sales_per_week != null && b.sales_per_week < SLOW_SALES_PER_WEEK ? 1 : 0;
-      return aSlow - bSlow || (b.est_profit ?? 0) - (a.est_profit ?? 0);
-    });
+  const flips = allListings.filter((l) => (l.flip_score ?? -1) >= MIN_FLIP_SCORE);
   const valuedCount = allListings.filter((l) => l.estimated_market_value != null).length;
 
   return (
@@ -59,7 +50,7 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold">Top Flips</h1>
         <p className="text-sm text-gray-500 mt-1">
           {allListings.length} listings found / {valuedCount} valued /{" "}
-          {flips.length} flips worth ${MIN_PROFIT}+ profit
+          {flips.length} flips scoring {MIN_FLIP_SCORE}+
         </p>
       </div>
 
@@ -81,7 +72,7 @@ export default function Dashboard() {
           ) : (
             <>
               <p className="text-gray-500">
-                Nothing clearing ${MIN_PROFIT} profit after fees yet.
+                Nothing scoring {MIN_FLIP_SCORE}+ as a flip yet.
               </p>
               <p className="text-sm text-gray-400 mt-1">
                 Discovery keeps sweeping hourly. Browse everything on the{" "}

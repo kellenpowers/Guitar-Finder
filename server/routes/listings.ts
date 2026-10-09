@@ -1,8 +1,33 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
 import { RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
+import {
+  W_PROFIT, W_ROI, W_VELOCITY, W_CONFIDENCE,
+  PROFIT_FULL_MARKS, ROI_FULL_MARKS, VELOCITY_FULL_MARKS, VELOCITY_UNKNOWN,
+  SOURCE_CONFIDENCE, SOURCE_CONFIDENCE_DEFAULT,
+} from "../services/flip-score.js";
 
 const router = Router();
+
+// SQL mirror of services/flip-score.ts computeFlipScore, built from the same
+// constants so there is one set of tunables
+const PROFIT_EXPR = `(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price)`;
+const FLIP_SCORE_EXPR = `
+      CASE
+        WHEN mp.estimated_market_value > 0 AND ${PROFIT_EXPR} <= 0 THEN 0
+        WHEN mp.estimated_market_value > 0 THEN ROUND(100 * (
+          ${W_PROFIT} * MIN(${PROFIT_EXPR} / ${PROFIT_FULL_MARKS}.0, 1) +
+          ${W_ROI} * MIN(${PROFIT_EXPR} / MAX(l.price, 1) / ${ROI_FULL_MARKS}, 1) +
+          ${W_VELOCITY} * (CASE WHEN mp.sales_per_week IS NULL THEN ${VELOCITY_UNKNOWN}
+                           ELSE MIN(mp.sales_per_week / ${VELOCITY_FULL_MARKS}.0, 1) END) +
+          ${W_CONFIDENCE} * (CASE mp.value_source
+                             WHEN 'ebay_sold' THEN ${SOURCE_CONFIDENCE.ebay_sold}
+                             WHEN 'reverb_price_guide' THEN ${SOURCE_CONFIDENCE.reverb_price_guide}
+                             WHEN 'reverb_asking' THEN ${SOURCE_CONFIDENCE.reverb_asking}
+                             ELSE ${SOURCE_CONFIDENCE_DEFAULT} END)
+        ))
+        ELSE NULL
+      END`;
 
 router.get("/", (req, res) => {
   const db = getDb();
@@ -24,7 +49,8 @@ router.get("/", (req, res) => {
       CASE WHEN mp.estimated_market_value > 0
         THEN ROUND(mp.estimated_market_value * ${1 - RESALE_FEE_PCT} - ${SHIPPING_EST} - l.price)
         ELSE NULL
-      END as est_profit
+      END as est_profit,
+      ${FLIP_SCORE_EXPR} as flip_score
     FROM listings l
     LEFT JOIN (
       SELECT listing_id, estimated_market_value, value_source, sales_per_week,
@@ -50,7 +76,9 @@ router.get("/", (req, res) => {
     params.push(Number(minScore));
   }
 
-  if (sortBy === "profit") {
+  if (sortBy === "flip") {
+    sql += " ORDER BY flip_score DESC NULLS LAST";
+  } else if (sortBy === "profit") {
     sql += " ORDER BY est_profit DESC NULLS LAST";
   } else if (sortBy === "score") {
     sql += " ORDER BY deal_score DESC NULLS LAST";
