@@ -3,6 +3,7 @@ import { facebookScraper, citySlug } from "../scrapers/facebook.js";
 import { scrapeCraigslistSection } from "../scrapers/craigslist.js";
 import { estimateValue } from "./valuation.js";
 import { applyDistances } from "./distance.js";
+import { publishSnapshot } from "./publisher.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
@@ -148,6 +149,8 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
       }
       await new Promise((r) => setTimeout(r, 1500)); // politeness between lookups
     }
+
+    await publishSnapshot();
 
     console.log(
       `Discovery sweep done: ${found} listings seen, ${newCount} new kept, ${valued} valued (${unvalued.length - valued} had no comps).`

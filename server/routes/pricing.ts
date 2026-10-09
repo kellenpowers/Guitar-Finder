@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { estimateValue } from "../services/valuation.js";
 import { applyDistances } from "../services/distance.js";
+import { publishSnapshot } from "../services/publisher.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { getDb } from "../db/index.js";
 
@@ -66,6 +67,7 @@ router.post("/backfill", (_req, res) => {
       await new Promise((r) => setTimeout(r, 1000));
     }
     console.log(`Value re-check done: ${checked} of ${listings.length} listings got a market value.`);
+    await publishSnapshot();
   })()
     .catch((err) => console.error("Backfill failed:", err))
     .finally(() => {
