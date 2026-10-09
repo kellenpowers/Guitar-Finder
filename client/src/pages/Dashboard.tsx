@@ -7,6 +7,9 @@ import { api } from "../api";
 // A listing qualifies as a flip when its estimated profit (after resale fees
 // and shipping) clears this many dollars.
 const MIN_PROFIT = 50;
+// Flips selling slower than this (per week on eBay) sink to the bottom —
+// profit you'd sit on for months ranks below profit that moves.
+const SLOW_SALES_PER_WEEK = 0.5;
 
 export default function Dashboard() {
   const [allListings, setAllListings] = useState<any[]>([]);
@@ -41,7 +44,13 @@ export default function Dashboard() {
     );
   }
 
-  const flips = allListings.filter((l) => (l.est_profit ?? -Infinity) >= MIN_PROFIT);
+  const flips = allListings
+    .filter((l) => (l.est_profit ?? -Infinity) >= MIN_PROFIT)
+    .sort((a, b) => {
+      const aSlow = a.sales_per_week != null && a.sales_per_week < SLOW_SALES_PER_WEEK ? 1 : 0;
+      const bSlow = b.sales_per_week != null && b.sales_per_week < SLOW_SALES_PER_WEEK ? 1 : 0;
+      return aSlow - bSlow || (b.est_profit ?? 0) - (a.est_profit ?? 0);
+    });
   const valuedCount = allListings.filter((l) => l.estimated_market_value != null).length;
 
   return (

@@ -17,7 +17,36 @@ interface ListingCardProps {
     value_source?: string | null;
     savings: number | null;
     est_profit?: number | null;
+    sales_per_week?: number | null;
   };
+}
+
+// ===== Sales-velocity tunables =====
+// At or above FAST = quick flip; below SLOW = you'll sit on it a while
+const FAST_SALES_PER_WEEK = 2;
+const SLOW_SALES_PER_WEEK = 0.5;
+
+function VelocityBadge({ salesPerWeek }: { salesPerWeek?: number | null }) {
+  if (salesPerWeek == null) return null;
+  if (salesPerWeek >= FAST_SALES_PER_WEEK) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+        Fast seller · ~{salesPerWeek}/wk
+      </span>
+    );
+  }
+  if (salesPerWeek < SLOW_SALES_PER_WEEK) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+        Slow seller · ~{salesPerWeek}/wk
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+      Sells ~{salesPerWeek}/wk
+    </span>
+  );
 }
 
 interface Comparable {
@@ -96,6 +125,7 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   {sourceLabel ? ` (${sourceLabel})` : ""}
                 </span>
               )}
+              <VelocityBadge salesPerWeek={listing.sales_per_week} />
               {listing.est_profit != null && listing.est_profit > 0 ? (
                 <span className="text-xs text-green-600 font-bold">
                   ~${listing.est_profit.toLocaleString()} profit after fees

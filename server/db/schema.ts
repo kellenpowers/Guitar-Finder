@@ -56,11 +56,15 @@ export function initSchema(db: Database.Database): void {
   migrateValueSource(db);
 }
 
-// Adds market_prices.value_source (which data backed the estimate) to older DBs
+// Adds market_prices.value_source (which data backed the estimate) and
+// market_prices.sales_per_week (how fast the item sells) to older DBs
 function migrateValueSource(db: Database.Database): void {
   const cols = db.prepare("PRAGMA table_info(market_prices)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "value_source")) {
     db.exec("ALTER TABLE market_prices ADD COLUMN value_source TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.some((c) => c.name === "sales_per_week")) {
+    db.exec("ALTER TABLE market_prices ADD COLUMN sales_per_week REAL");
   }
 }
 

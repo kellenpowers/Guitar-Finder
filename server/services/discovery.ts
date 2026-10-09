@@ -127,8 +127,8 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
 
     let valued = 0;
     const priceStmt = db.prepare(`
-      INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const listing of unvalued) {
       try {
@@ -136,7 +136,7 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
         if (result) {
           priceStmt.run(
             listing.id, listing.title, result.estimatedValue,
-            JSON.stringify(result.comparables), result.source
+            JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null
           );
           valued++;
         }

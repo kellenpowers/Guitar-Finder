@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseCardLines, citySlug } from "../scrapers/facebook.js";
-import { parseEbayHtml } from "../scrapers/ebay.js";
+import { parseEbayHtml, computeSalesPerWeek } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
@@ -69,6 +69,38 @@ describe("parseEbayHtml", () => {
   it("skips cards without an item id", () => {
     const html = `<li class="s-item"><a class="s-item__link" href="https://www.ebay.com/other"></a><div class="s-item__title">No id</div></li>`;
     expect(parseEbayHtml(html)).toHaveLength(0);
+  });
+
+  it("extracts the sold date from sold-listing captions", () => {
+    const html = `
+      <li class="s-item">
+        <a class="s-item__link" href="https://www.ebay.com/itm/444"></a>
+        <div class="s-item__title">Canon AE-1</div>
+        <span class="s-item__price">$150.00</span>
+        <div class="s-item__caption"><span>Sold  Oct 5, 2026</span></div>
+      </li>`;
+    const [item] = parseEbayHtml(html);
+    expect(item.postedAt).toContain("2026-10-05");
+  });
+});
+
+describe("computeSalesPerWeek", () => {
+  const day = 86_400_000;
+  it("computes rate from sale timestamps", () => {
+    // 5 sales over 7 days = 5/week
+    const now = Date.now();
+    const ts = [now, now - 2 * day, now - 3 * day, now - 5 * day, now - 7 * day];
+    expect(computeSalesPerWeek(ts)).toBe(5);
+  });
+  it("flags slow movers", () => {
+    const now = Date.now();
+    // 3 sales over 90 days ≈ 0.2/week
+    const rate = computeSalesPerWeek([now, now - 45 * day, now - 90 * day]);
+    expect(rate).toBeLessThan(0.5);
+  });
+  it("needs at least 3 dated sales", () => {
+    expect(computeSalesPerWeek([Date.now(), Date.now() - day])).toBeNull();
+    expect(computeSalesPerWeek([Date.now(), NaN, NaN])).toBeNull();
   });
 });
 

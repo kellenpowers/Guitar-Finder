@@ -8,12 +8,12 @@ const router = Router();
 function insertMarketPrice(
   db: any,
   listing: any,
-  result: { estimatedValue: number; comparables: unknown[]; source: string }
+  result: { estimatedValue: number; comparables: unknown[]; source: string; salesPerWeek?: number | null }
 ) {
   db.prepare(`
-    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source);
+    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(listing.id, listing.title, result.estimatedValue, JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null);
 }
 
 // Backfill valuations for listings that have none, and re-check ones whose
