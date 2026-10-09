@@ -108,7 +108,7 @@ export async function runSearch(search: any): Promise<number> {
         newCount++;
         // Auto-check price for new listings
         try {
-          const priceResult = await estimateValue(listing.title);
+          const { result: priceResult, fromCache } = await estimateValue(listing.title);
           if (priceResult) {
             const listingRow = db.prepare(
               "SELECT id FROM listings WHERE source = ? AND external_id = ?"
@@ -120,11 +120,11 @@ export async function runSearch(search: any): Promise<number> {
               `).run(listingRow.id, listing.title, priceResult.estimatedValue, JSON.stringify(priceResult.comparables), priceResult.source, priceResult.salesPerWeek ?? null);
             }
           }
+          // Rate limit real lookups; cache hits are free
+          if (!fromCache) await new Promise((r) => setTimeout(r, 500));
         } catch (err) {
           console.error(`Price check failed for "${listing.title}":`, err);
         }
-        // Rate limit Reverb API calls
-        await new Promise((r) => setTimeout(r, 500));
       }
     }
   }

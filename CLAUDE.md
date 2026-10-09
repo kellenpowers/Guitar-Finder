@@ -6,9 +6,11 @@ nationally. An hourly **discovery** sweep (`server/services/discovery.ts`)
 browses high-resale categories newest-first on Facebook Marketplace and
 Craigslist — no keywords — plus optional saved keyword searches across all
 five sources (FB, Craigslist, eBay, OfferUp, Reverb). Every find is valued
-against real sold prices (Reverb price guide → eBay sold median → Reverb
-asking as labeled last resort), and the dashboard ranks by estimated profit
-after resale fees and shipping (`server/services/profit.ts`).
+against real sold prices (eBay sold median → Reverb price guide → Reverb
+asking as labeled last resort, cached per query in `valuation_cache`), and
+the dashboard ranks by Flip Score (`server/services/flip-score.ts`) built on
+estimated profit after resale fees, shipping, and the pickup drive
+(`server/services/profit.ts`).
 
 ## Hard rules
 

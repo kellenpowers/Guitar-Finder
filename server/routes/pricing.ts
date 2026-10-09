@@ -53,7 +53,7 @@ router.post("/backfill", (_req, res) => {
     await applyDistances().catch((err) => console.error("Distance pass failed:", err));
     let checked = 0;
     for (const [i, listing] of listings.entries()) {
-      const result = await estimateValue(listing.title);
+      const { result, fromCache } = await estimateValue(listing.title);
       if (result) {
         insertMarketPrice(db, listing, result);
         checked++;
@@ -64,7 +64,7 @@ router.post("/backfill", (_req, res) => {
       if ((i + 1) % 10 === 0) {
         console.log(`Value re-check progress: ${i + 1}/${listings.length} (${checked} valued)`);
       }
-      await new Promise((r) => setTimeout(r, 1000));
+      if (!fromCache) await new Promise((r) => setTimeout(r, 1000));
     }
     console.log(`Value re-check done: ${checked} of ${listings.length} listings got a market value.`);
     await publishSnapshot();
@@ -82,7 +82,7 @@ router.post("/check/:listingId", async (req, res) => {
     const listing = db.prepare("SELECT * FROM listings WHERE id = ?").get(req.params.listingId) as any;
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
-    const marketPrice = await estimateValue(listing.title);
+    const { result: marketPrice } = await estimateValue(listing.title);
     if (marketPrice) {
       insertMarketPrice(db, listing, marketPrice);
 
@@ -109,13 +109,13 @@ router.post("/check-search/:searchId", async (req, res) => {
 
     let checked = 0;
     for (const listing of listings) {
-      const marketPrice = await estimateValue(listing.title);
+      const { result: marketPrice, fromCache } = await estimateValue(listing.title);
       if (marketPrice) {
         insertMarketPrice(db, listing, marketPrice);
         checked++;
       }
-      // Delay between requests to be polite
-      await new Promise((r) => setTimeout(r, 1000));
+      // Delay between real lookups to be polite; cache hits are free
+      if (!fromCache) await new Promise((r) => setTimeout(r, 1000));
     }
 
     res.json({ checked, total: listings.length });

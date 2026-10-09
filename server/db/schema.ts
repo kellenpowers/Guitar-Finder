@@ -53,6 +53,15 @@ export function initSchema(db: Database.Database): void {
       lon REAL NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS valuation_cache (
+      query TEXT PRIMARY KEY,
+      estimated_value REAL,
+      value_source TEXT,
+      sales_per_week REAL,
+      comparables TEXT NOT NULL DEFAULT '[]',
+      checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS routecache (
       place TEXT NOT NULL,
       home TEXT NOT NULL,

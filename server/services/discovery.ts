@@ -20,7 +20,8 @@ const CATEGORIES: Array<{ name: string; fb: string | null; cl: string | null }> 
 const PRICE_MIN = 25; // ignore cheap junk — fees and shipping eat small flips
 const PRICE_MAX = 5000;
 const MIN_TITLE_LEN = 12; // vague titles can't be valued against comps
-const VALUATIONS_PER_RUN = 40; // cap sold-price lookups per sweep (politeness)
+const VALUATIONS_PER_RUN = 40; // cap NETWORK sold-price lookups per sweep (politeness)
+const VALUATION_FETCH_LIMIT = 200; // rows considered per sweep — cache hits are free
 export const DISCOVERY_CRON = "0 * * * *"; // hourly
 
 const DISCOVERY_SEARCH_NAME = "Discovery (automatic)";
@@ -127,16 +128,18 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
       WHERE l.search_id = ? AND mp.id IS NULL
       ORDER BY l.scraped_at DESC
       LIMIT ?
-    `).all(searchId, VALUATIONS_PER_RUN) as any[];
+    `).all(searchId, VALUATION_FETCH_LIMIT) as any[];
 
     let valued = 0;
+    let networkLookups = 0;
     const priceStmt = db.prepare(`
       INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const listing of unvalued) {
+      if (networkLookups >= VALUATIONS_PER_RUN) break;
       try {
-        const result = await estimateValue(listing.title);
+        const { result, fromCache } = await estimateValue(listing.title);
         if (result) {
           priceStmt.run(
             listing.id, listing.title, result.estimatedValue,
@@ -144,16 +147,20 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
           );
           valued++;
         }
+        if (!fromCache) {
+          networkLookups++;
+          await new Promise((r) => setTimeout(r, 1500)); // politeness between real lookups
+        }
       } catch (err) {
         console.error(`Discovery valuation failed for "${listing.title}":`, err);
       }
-      await new Promise((r) => setTimeout(r, 1500)); // politeness between lookups
     }
 
     await publishSnapshot();
 
     console.log(
-      `Discovery sweep done: ${found} listings seen, ${newCount} new kept, ${valued} valued (${unvalued.length - valued} had no comps).`
+      `Discovery sweep done: ${found} listings seen, ${newCount} new kept, ` +
+        `${valued} valued (${networkLookups} real lookups, rest cached).`
     );
     return { found, newCount, valued };
   } finally {
