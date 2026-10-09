@@ -23,11 +23,16 @@ eBay and OfferUp need no setup.
 
 ## Running it
 
-```bash
-npm start
-```
+Easiest: in Finder, open the Guitar-Finder folder and double-click
+**Start Flip Finder.command** (keep the window it opens). To update to the
+latest version, double-click **Update Flip Finder.command** instead — it
+downloads, installs, and starts in one go.
 
-Then open **http://localhost:3001** in your browser.
+(Terminal equivalent: `npm start`.)
+
+Then open **http://localhost:3001** in your browser — or add it to your
+phone's home screen (Safari → Share → Add to Home Screen) on the same Wi-Fi,
+using `http://<your-mac-name>.local:3001`.
 
 ### First run
 
