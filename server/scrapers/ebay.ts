@@ -16,6 +16,90 @@ async function fetchEbayHtml(url: string): Promise<string> {
   return html;
 }
 
+// ===== Official Browse API (used automatically when EBAY_CLIENT_ID /
+// EBAY_CLIENT_SECRET are set in .env; falls back to scraping on any failure,
+// e.g. if eBay hasn't enabled production buy scopes for this keyset yet) =====
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
+async function getEbayAppToken(): Promise<string> {
+  if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
+    return cachedToken.value;
+  }
+  const basic = Buffer.from(
+    `${process.env.EBAY_CLIENT_ID}:${process.env.EBAY_CLIENT_SECRET}`
+  ).toString("base64");
+  const res = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body:
+      "grant_type=client_credentials&scope=" +
+      encodeURIComponent("https://api.ebay.com/oauth/api_scope"),
+  });
+  if (!res.ok) {
+    throw new Error(`eBay token mint failed (${res.status}): ${(await res.text()).slice(0, 150)}`);
+  }
+  const data = await res.json();
+  cachedToken = {
+    value: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ?? 7200) * 1000,
+  };
+  return cachedToken.value;
+}
+
+// Pure mapper from a Browse API itemSummary to our listing shape.
+// legacyItemId keeps dedupe continuity with previously scraped /itm/ ids.
+export function mapBrowseItem(item: any): ScrapedListing | null {
+  const externalId =
+    String(item?.legacyItemId || "").trim() ||
+    String(item?.itemId || "").split("|")[1] ||
+    "";
+  const title = (item?.title || "").trim();
+  const price = parseFloat(item?.price?.value || "0");
+  if (!externalId || !title || !(price > 0)) return null;
+  return {
+    externalId,
+    title,
+    description: "",
+    price,
+    imageUrl: item?.image?.imageUrl || item?.thumbnailImages?.[0]?.imageUrl || "",
+    listingUrl: item?.itemWebUrl || `https://www.ebay.com/itm/${externalId}`,
+    location: "eBay (shipped)",
+    postedAt: item?.itemCreationDate || null,
+  };
+}
+
+async function browseSearch(options: ScraperOptions): Promise<ScrapedListing[]> {
+  const token = await getEbayAppToken();
+  const filters = ["buyingOptions:{FIXED_PRICE}", "priceCurrency:USD"];
+  if (options.maxPrice) filters.push(`price:[..${Math.round(options.maxPrice)}]`);
+  const params = new URLSearchParams({
+    q: options.query,
+    sort: "newlyListed",
+    limit: "50",
+    filter: filters.join(","),
+  });
+  const res = await fetch(
+    `https://api.ebay.com/buy/browse/v1/item_summary/search?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+      },
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Browse API ${res.status}: ${(await res.text()).slice(0, 150)}`);
+  }
+  const items = (await res.json())?.itemSummaries || [];
+  const listings = items.map(mapBrowseItem).filter(Boolean) as ScrapedListing[];
+  console.log(`Found ${listings.length} listings on eBay (official API)`);
+  return listings;
+}
+
 // eBay's search results page needs no login, but eBay blocks plain HTTP
 // fetches (403), so pages are loaded through the shared headless browser.
 
@@ -72,6 +156,16 @@ export class EbayScraper implements Scraper {
   name = "ebay";
 
   async scrape(options: ScraperOptions): Promise<ScrapedListing[]> {
+    if (process.env.EBAY_CLIENT_ID && process.env.EBAY_CLIENT_SECRET) {
+      try {
+        return await browseSearch(options);
+      } catch (err) {
+        console.warn(
+          `eBay API failed (${err instanceof Error ? err.message : err}) — falling back to page scrape.`
+        );
+      }
+    }
+
     const params = new URLSearchParams({
       _nkw: options.query,
       _sop: "10", // newly listed first
