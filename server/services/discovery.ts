@@ -4,6 +4,7 @@ import { scrapeCraigslistSection } from "../scrapers/craigslist.js";
 import { estimateValue } from "./valuation.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
+import { applySellerNames } from "./seller-names.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
@@ -156,6 +157,7 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
       }
     }
 
+    await applySellerNames().catch((err) => console.error("Seller-name pass failed:", err));
     await publishSnapshot();
 
     console.log(

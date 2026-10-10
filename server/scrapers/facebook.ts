@@ -85,6 +85,37 @@ export class FacebookMarketplaceScraper implements Scraper {
     }
   }
 
+  // Read seller first names from listing detail pages, for message drafts.
+  // One browser, polite delays; callers cap how many URLs per sweep.
+  async sellerNames(urls: string[]): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    if (urls.length === 0) return names;
+
+    const { browser, context } = await this.getContext();
+    try {
+      const page = await context.newPage();
+      for (const url of urls) {
+        try {
+          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+          await randomDelay(2000, 3500);
+          const anchors = await page.$$("a[href*='/marketplace/profile/']");
+          for (const a of anchors) {
+            const text = ((await a.innerText().catch(() => "")) || "").trim();
+            if (text && text.length > 1 && text.length < 60 && !/seller|details/i.test(text)) {
+              names.set(url, text);
+              break;
+            }
+          }
+        } catch {
+          // One failed page must not stop the rest
+        }
+      }
+      return names;
+    } finally {
+      await browser.close();
+    }
+  }
+
   // Scrape an arbitrary Marketplace URL (e.g. a category browse page) — used
   // by discovery sweeps. Same logged-in session, scrolling, and parsing.
   async scrapeUrl(url: string): Promise<ScrapedListing[]> {

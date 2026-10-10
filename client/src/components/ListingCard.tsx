@@ -22,6 +22,7 @@ interface ListingCardProps {
     flip_score?: number | null;
     distance_miles?: number | null;
     drive_minutes?: number | null;
+    seller_name?: string | null;
   };
 }
 
@@ -282,10 +283,6 @@ export default function ListingCard({ listing }: ListingCardProps) {
             <p className="text-sm text-gray-500 mb-3">
               Edit if you like, then Copy &amp; Open. The listing opens with your
               message on the clipboard. Paste it into the seller chat and send.
-              {listing.source !== "craigslist" && !followUp && (
-                <> Swap <span className="font-mono">[name]</span> for the seller's
-                first name once the chat opens.</>
-              )}
             </p>
             <textarea
               value={draftText}
