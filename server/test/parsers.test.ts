@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseCardLines, citySlug } from "../scrapers/facebook.js";
-import { parseEbayHtml, computeSalesPerWeek } from "../scrapers/ebay.js";
+import { parseEbayHtml, computeSalesPerWeek, mapBrowseItem } from "../scrapers/ebay.js";
 import { parseCraigslistHtml } from "../scrapers/craigslist.js";
 import { scoreDeal } from "../services/deal-scorer.js";
 import { estimateProfit, RESALE_FEE_PCT, SHIPPING_EST } from "../services/profit.js";
@@ -84,6 +84,43 @@ describe("parseEbayHtml", () => {
       </li>`;
     const [item] = parseEbayHtml(html);
     expect(item.postedAt).toContain("2026-10-05");
+  });
+});
+
+describe("mapBrowseItem (eBay Browse API)", () => {
+  it("maps a normal item summary", () => {
+    expect(
+      mapBrowseItem({
+        itemId: "v1|405012345678|0",
+        legacyItemId: "405012345678",
+        title: "Martin D-18 Acoustic Guitar",
+        price: { value: "1899.00", currency: "USD" },
+        image: { imageUrl: "https://i.ebayimg.com/x.jpg" },
+        itemWebUrl: "https://www.ebay.com/itm/405012345678",
+        itemCreationDate: "2026-10-01T12:00:00.000Z",
+      })
+    ).toMatchObject({
+      externalId: "405012345678",
+      title: "Martin D-18 Acoustic Guitar",
+      price: 1899,
+      listingUrl: "https://www.ebay.com/itm/405012345678",
+    });
+  });
+
+  it("falls back to the itemId middle segment without legacyItemId", () => {
+    const mapped = mapBrowseItem({
+      itemId: "v1|123456|0",
+      title: "Thing",
+      price: { value: "50" },
+    });
+    expect(mapped?.externalId).toBe("123456");
+    expect(mapped?.listingUrl).toBe("https://www.ebay.com/itm/123456");
+  });
+
+  it("rejects items without id, title, or a positive price", () => {
+    expect(mapBrowseItem({ title: "x", price: { value: "10" } })).toBeNull();
+    expect(mapBrowseItem({ legacyItemId: "1", price: { value: "10" } })).toBeNull();
+    expect(mapBrowseItem({ legacyItemId: "1", title: "x", price: { value: "0" } })).toBeNull();
   });
 });
 
