@@ -124,10 +124,17 @@ export default function ListingCard({ listing }: ListingCardProps) {
     setShowDraft(true);
   }
 
+  // Keep edits per mode so toggling follow-up never destroys typed text
+  const [savedDrafts, setSavedDrafts] = useState<{ first?: string; follow?: string }>({});
+
   function toggleFollowUp() {
     const next = !followUp;
+    setSavedDrafts((prev) => ({ ...prev, [followUp ? "follow" : "first"]: draftText }));
     setFollowUp(next);
-    setDraftText(draftSellerMessage(listing, { followUp: next }));
+    setDraftText(
+      (next ? savedDrafts.follow : savedDrafts.first) ??
+        draftSellerMessage(listing, { followUp: next })
+    );
     setCopied(false);
   }
 
@@ -288,7 +295,16 @@ export default function ListingCard({ listing }: ListingCardProps) {
             />
             {(() => {
               const ladder = counterLadder(listing);
-              if (!ladder) return null;
+              if (!ladder) {
+                if (!listing.estimated_market_value) return null;
+                return (
+                  <div className="bg-red-50 border border-red-200 rounded p-2 mb-3 text-sm text-red-800">
+                    <span className="font-semibold">Heads up:</span> the numbers
+                    don't work at this asking price. Probably skip unless the
+                    seller comes down a lot.
+                  </div>
+                );
+              }
               return (
                 <div className="bg-amber-50 border border-amber-200 rounded p-2 mb-3 text-sm text-amber-900">
                   <span className="font-semibold">Your numbers (never send these):</span>{" "}

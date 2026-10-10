@@ -12,6 +12,7 @@
 
 // ===== Negotiation tunables =====
 const MIN_PROFIT_FLOOR = 40; // walk-away still keeps at least this much profit
+const LOWBALL_FLOOR_RATIO = 0.35; // if our max is under this fraction of asking, the deal is dead
 const NO_VALUE_CAP_RATIO = 0.85; // max spend vs asking when no market value known
 const ACKERMAN_STEPS = [0.65, 0.85, 0.95]; // Voss ladder: shrinking raises to max
 // Mirror of server/services/profit.ts constants (keep in sync)
@@ -61,9 +62,13 @@ export function counterLadder(l: NegotiationListing): CounterLadder | null {
     cap = cap * NO_VALUE_CAP_RATIO;
   }
   if (cap < 10) return null; // the math says this flip doesn't work
+  // Offering a tiny fraction of asking isn't a negotiation, it's a dead deal
+  if (cap < l.price * LOWBALL_FLOOR_RATIO) return null;
 
   let final = Math.floor(cap);
-  if (final % 10 === 0) final -= 5; // end on a specific, non-round number
+  // End on a specific, non-round number — but don't butcher tiny budgets
+  // (a $10 cap must not become $5)
+  if (final % 10 === 0) final -= final >= 40 ? 5 : 1;
 
   if (final < 40) {
     // Cheap item: a four-rung ladder is silly, offer the number
@@ -75,6 +80,11 @@ export function counterLadder(l: NegotiationListing): CounterLadder | null {
   let s1 = Math.min(r5(final * ACKERMAN_STEPS[0]), s2 - 5);
   if (s1 < 5) return { steps: [final], walkAway: final };
 
+  // Raises must shrink: rounding + clamping can make the last raise grow
+  // (e.g. [45, 60, 65, 71]); split the gap when it does
+  if (final - s3 > s3 - s2) s3 = Math.round((final + s2) / 2);
+  if (s3 - s2 > s2 - s1) s2 = Math.round((s3 + s1) / 2);
+
   return { steps: [s1, s2, s3, final], walkAway: final };
 }
 
@@ -82,8 +92,28 @@ export function counterLadder(l: NegotiationListing): CounterLadder | null {
 // there, so the item must be named)
 const DANGLING_WORDS = new Set(["and", "or", "with", "plus", "for", "the", "a", "an"]);
 
+// Seller titles are ad copy: emojis, em dashes, ALL CAPS, their own price.
+// None of that may leak into our message (and echoing their price undercuts
+// the low anchor).
+function sanitizeTitle(title: string): string {
+  const cleaned = title
+    .replace(/[–—]/g, " ") // en/em dashes — banned in our messages
+    .replace(/\$\s?\d[\d,.]*/g, " ") // the seller's asking price
+    .replace(/\b(obo|o\.b\.o\.?|firm|must see|must sell|look|wow)\b/gi, " ")
+    .replace(/[^\w\s,.'"&/+-]/g, " ") // emojis and decoration
+    .replace(/\s+/g, " ")
+    .trim();
+  // Tame ALL-CAPS shouting but keep short model codes (SM7B, DJI)
+  return cleaned
+    .split(" ")
+    .map((w) =>
+      w.length > 3 && /^[A-Z]{4,}$/.test(w) ? w[0] + w.slice(1).toLowerCase() : w
+    )
+    .join(" ");
+}
+
 export function shortItemName(title: string): string {
-  const words = title.trim().split(/\s+/).slice(0, 6);
+  const words = sanitizeTitle(title).split(/\s+/).filter(Boolean).slice(0, 6);
   // Don't end mid-phrase ("exam tables and")
   while (
     words.length > 1 &&
@@ -91,7 +121,7 @@ export function shortItemName(title: string): string {
   ) {
     words.pop();
   }
-  return words.join(" ").replace(/[,;:!.]+$/, "");
+  return words.join(" ").replace(/[,;:!.?'"]+$/, "");
 }
 
 export function draftSellerMessage(
@@ -116,22 +146,29 @@ export function draftSellerMessage(
 
   const greeting = onCraigslist ? "Hey," : "Hey [name],";
 
+  const itemName = shortItemName(l.title);
+  const clIntro = itemName
+    ? `I'm interested in the ${itemName}.`
+    : "I'm interested in what you listed.";
+
   let label: string;
   let question: string;
   if (bundle) {
     label = onCraigslist
-      ? `I'm interested in your "${shortItemName(l.title)}" listing and possibly more as a bundle.`
+      ? itemName
+        ? `I'm interested in your "${itemName}" listing and possibly more as a bundle.`
+        : "I'm interested in what you're selling and possibly more as a bundle."
       : "I'd be interested in a bundle if you're selling more than this.";
     question =
       "What else do you have that isn't listed yet, and could you send brands and models?";
   } else if (needsWork) {
     label = onCraigslist
-      ? `I'm interested in the ${shortItemName(l.title)}. Sounds like it needs a little work, which is fine by me.`
+      ? `${clIntro} Sounds like it needs a little work, which is fine by me.`
       : "Sounds like it needs a little work, which is fine by me.";
     question = "What exactly is going on with it, and do any parts or accessories come with it?";
   } else {
     label = onCraigslist
-      ? `I'm interested in the ${shortItemName(l.title)}. Looks like it's been well kept.`
+      ? `${clIntro} Looks like it's been well kept.`
       : "Looks like it's been well kept.";
     question = "Does everything work like it should, and does anything extra come with it?";
   }
