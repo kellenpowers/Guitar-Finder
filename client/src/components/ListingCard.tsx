@@ -69,6 +69,28 @@ function VelocityBadge({ salesPerWeek }: { salesPerWeek?: number | null }) {
   );
 }
 
+// ===== Draft-message tunables =====
+// At or above this Flip Score, offer full asking price to win the race;
+// below it, open with a polite haggle at this fraction of asking.
+const FULL_PRICE_SCORE = 70;
+const HAGGLE_RATIO = 0.9;
+// Sources where messaging a local seller makes sense (eBay/Reverb you just buy)
+const MESSAGEABLE_SOURCES = new Set(["facebook", "craigslist", "offerup"]);
+
+function draftMessage(listing: ListingCardProps["listing"]): string {
+  const greeting = `Hi! Is this still available? I'm interested in the ${listing.title.trim()}.`;
+  const pickup = "I can pick it up with cash in hand.";
+
+  if ((listing.flip_score ?? 0) >= FULL_PRICE_SCORE) {
+    return `${greeting} ${pickup} Happy to pay your asking price — when works for you?`;
+  }
+  const offer = Math.max(5, Math.round((listing.price * HAGGLE_RATIO) / 5) * 5);
+  if (offer >= listing.price) {
+    return `${greeting} ${pickup} When works for you?`;
+  }
+  return `${greeting} ${pickup} Would you take $${offer}?`;
+}
+
 interface Comparable {
   title: string;
   price: number;
@@ -83,10 +105,50 @@ const VALUE_SOURCE_LABELS: Record<string, string> = {
   reverb_asking: "Reverb asking",
 };
 
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export default function ListingCard({ listing }: ListingCardProps) {
   const [showComps, setShowComps] = useState(false);
   const [comps, setComps] = useState<Comparable[] | null>(null);
   const [compsSource, setCompsSource] = useState<string>("");
+  const [showDraft, setShowDraft] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  function openDraft(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraftText(draftMessage(listing));
+    setCopied(false);
+    setShowDraft(true);
+  }
+
+  async function handleCopyAndOpen() {
+    const ok = await copyText(draftText);
+    if (!ok) {
+      alert("Couldn't copy automatically — press and hold the text to copy it yourself, then tap Open Listing.");
+      return;
+    }
+    setCopied(true);
+    window.open(listing.listing_url, "_blank", "noopener");
+  }
 
   async function openComps(e: React.MouseEvent) {
     // The whole card is a link to the marketplace listing — don't follow it
@@ -159,6 +221,14 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   </span>
                 )
               )}
+              {MESSAGEABLE_SOURCES.has(listing.source) && (
+                <button
+                  onClick={openDraft}
+                  className="text-xs px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium hover:bg-indigo-100"
+                >
+                  Draft message
+                </button>
+              )}
               {listing.estimated_market_value && (
                 <button
                   onClick={openComps}
@@ -200,6 +270,49 @@ export default function ListingCard({ listing }: ListingCardProps) {
           </div>
         </div>
       </a>
+
+      {showDraft && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowDraft(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-5 max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-1">Message the seller</h2>
+            <p className="text-sm text-gray-500 mb-3">
+              Edit if you like, then Copy &amp; Open — the listing opens with your
+              message on the clipboard. Paste it into the seller chat and send.
+            </p>
+            <textarea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              rows={5}
+              className="w-full border rounded p-2 text-sm mb-3"
+            />
+            {copied && (
+              <p className="text-sm text-green-600 mb-3">
+                Copied! Paste it into the message box on the listing page.
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDraft(false)}
+                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+              >
+                {copied ? "Done" : "Cancel"}
+              </button>
+              <button
+                onClick={handleCopyAndOpen}
+                className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+              >
+                Copy &amp; Open Listing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showComps && (
         <div
