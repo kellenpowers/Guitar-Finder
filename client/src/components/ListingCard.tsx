@@ -1,6 +1,7 @@
 import { useState } from "react";
 import DealBadge from "./DealBadge";
 import { api } from "../api";
+import { draftSellerMessage, counterLadder } from "../lib/negotiation";
 
 interface ListingCardProps {
   listing: {
@@ -69,27 +70,8 @@ function VelocityBadge({ salesPerWeek }: { salesPerWeek?: number | null }) {
   );
 }
 
-// ===== Draft-message tunables =====
-// At or above this Flip Score, offer full asking price to win the race;
-// below it, open with a polite haggle at this fraction of asking.
-const FULL_PRICE_SCORE = 70;
-const HAGGLE_RATIO = 0.9;
 // Sources where messaging a local seller makes sense (eBay/Reverb you just buy)
 const MESSAGEABLE_SOURCES = new Set(["facebook", "craigslist", "offerup"]);
-
-// Written in the owner's voice (his style rules: no em-dashes, no stock
-// phrases, warm and direct). The chat is attached to the listing, so "this"
-// reads human; pasting the title back reads like a bot.
-function draftMessage(listing: ListingCardProps["listing"]): string {
-  if ((listing.flip_score ?? 0) >= FULL_PRICE_SCORE) {
-    return "Hi! Is this still available? I'd love to come grab it. I can pay your asking price in cash. When would be a good time?";
-  }
-  const offer = Math.max(5, Math.round((listing.price * HAGGLE_RATIO) / 5) * 5);
-  if (offer >= listing.price) {
-    return "Hi! Is this still available? I can come get it with cash in hand. When would be a good time?";
-  }
-  return `Hi! Is this still available? I can come get it with cash in hand. Would $${offer} work?`;
-}
 
 interface Comparable {
   title: string;
@@ -131,13 +113,22 @@ export default function ListingCard({ listing }: ListingCardProps) {
   const [showDraft, setShowDraft] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [followUp, setFollowUp] = useState(false);
 
   function openDraft(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setDraftText(draftMessage(listing));
+    setDraftText(draftSellerMessage(listing));
+    setFollowUp(false);
     setCopied(false);
     setShowDraft(true);
+  }
+
+  function toggleFollowUp() {
+    const next = !followUp;
+    setFollowUp(next);
+    setDraftText(draftSellerMessage(listing, { followUp: next }));
+    setCopied(false);
   }
 
   async function handleCopyAndOpen() {
@@ -282,15 +273,37 @@ export default function ListingCard({ listing }: ListingCardProps) {
           >
             <h2 className="text-lg font-semibold mb-1">Message the seller</h2>
             <p className="text-sm text-gray-500 mb-3">
-              Edit if you like, then Copy &amp; Open — the listing opens with your
+              Edit if you like, then Copy &amp; Open. The listing opens with your
               message on the clipboard. Paste it into the seller chat and send.
+              {listing.source !== "craigslist" && !followUp && (
+                <> Swap <span className="font-mono">[name]</span> for the seller's
+                first name once the chat opens.</>
+              )}
             </p>
             <textarea
               value={draftText}
               onChange={(e) => setDraftText(e.target.value)}
-              rows={5}
+              rows={6}
               className="w-full border rounded p-2 text-sm mb-3"
             />
+            {(() => {
+              const ladder = counterLadder(listing);
+              if (!ladder) return null;
+              return (
+                <div className="bg-amber-50 border border-amber-200 rounded p-2 mb-3 text-sm text-amber-900">
+                  <span className="font-semibold">Your numbers (never send these):</span>{" "}
+                  {ladder.steps.map((s) => `$${s}`).join(" → ")}
+                  {" · walk away above "}
+                  <span className="font-semibold">${ladder.walkAway}</span>
+                </div>
+              );
+            })()}
+            <button
+              onClick={toggleFollowUp}
+              className="text-xs text-indigo-600 hover:underline mb-3"
+            >
+              {followUp ? "Back to first message" : "Switch to follow-up (already messaged them)"}
+            </button>
             {copied && (
               <p className="text-sm text-green-600 mb-3">
                 Copied! Paste it into the message box on the listing page.
