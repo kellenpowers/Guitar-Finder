@@ -9,6 +9,7 @@ import { estimateValue } from "./valuation.js";
 import { runDiscovery, DISCOVERY_CRON } from "./discovery.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
+import { applySellerNames } from "./seller-names.js";
 import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
 
 const scrapers: Scraper[] = [
@@ -130,6 +131,7 @@ export async function runSearch(search: any): Promise<number> {
   }
 
   await applyDistances().catch((err) => console.error("Distance pass failed:", err));
+  await applySellerNames().catch((err) => console.error("Seller-name pass failed:", err));
   await publishSnapshot();
 
   console.log(`Search "${search.name}": found ${totalFound} listings, ${newCount} new`);

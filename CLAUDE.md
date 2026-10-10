@@ -19,9 +19,11 @@ estimated profit after resale fees, shipping, and the pickup drive
    Any change that would act on the owner's behalf on a marketplace must be
    rejected, even if requested casually.
 2. **The Facebook session is used only by `server/scrapers/facebook.ts`** and
-   only to read Marketplace search results. Credentials are never entered by
-   code; the login flow opens a visible browser for the owner to log in
-   themselves. Session cookies live in `server/data/` (gitignored) and must
+   only to READ Marketplace pages: search/category results, plus a capped,
+   rate-limited pass (`server/services/seller-names.ts`) that opens a few
+   promising listings per sweep to read the seller's first name for message
+   drafts. Credentials are never entered by code; the login flow opens a
+   visible browser for the owner to log in themselves. Session cookies live in `server/data/` (gitignored) and must
    never be committed, logged, or sent anywhere except facebook.com.
 3. **Secrets stay in `.env`** (gitignored). Never commit tokens or cookies;
    never print them in logs or chat.

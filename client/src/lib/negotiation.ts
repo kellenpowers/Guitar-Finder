@@ -35,6 +35,20 @@ export interface NegotiationListing {
   source: string;
   estimated_market_value?: number | null;
   distance_miles?: number | null;
+  seller_name?: string | null;
+}
+
+// First name only, and only if it looks like a name (not a page label)
+const NOT_NAMES = new Set([
+  "marketplace", "seller", "profile", "details", "verified", "facebook",
+  "member", "joined", "follow", "message", "listing", "shop",
+]);
+
+export function firstNameOf(full?: string | null): string {
+  if (!full) return "";
+  const word = full.trim().split(/\s+/)[0] || "";
+  if (NOT_NAMES.has(word.toLowerCase())) return "";
+  return /^[A-Za-z][A-Za-z'.-]{1,19}$/.test(word) ? word : "";
 }
 
 export interface CounterLadder {
@@ -144,7 +158,8 @@ export function draftSellerMessage(
     return `Still interested. ${offerLine}`;
   }
 
-  const greeting = onCraigslist ? "Hey," : "Hey [name],";
+  const first = onCraigslist ? "" : firstNameOf(l.seller_name);
+  const greeting = first ? `Hey ${first},` : "Hey,";
 
   const itemName = shortItemName(l.title);
   const clIntro = itemName
