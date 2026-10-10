@@ -77,18 +77,18 @@ const HAGGLE_RATIO = 0.9;
 // Sources where messaging a local seller makes sense (eBay/Reverb you just buy)
 const MESSAGEABLE_SOURCES = new Set(["facebook", "craigslist", "offerup"]);
 
+// Written in the owner's voice (his style rules: no em-dashes, no stock
+// phrases, warm and direct). The chat is attached to the listing, so "this"
+// reads human; pasting the title back reads like a bot.
 function draftMessage(listing: ListingCardProps["listing"]): string {
-  const greeting = `Hi! Is this still available? I'm interested in the ${listing.title.trim()}.`;
-  const pickup = "I can pick it up with cash in hand.";
-
   if ((listing.flip_score ?? 0) >= FULL_PRICE_SCORE) {
-    return `${greeting} ${pickup} Happy to pay your asking price — when works for you?`;
+    return "Hi! Is this still available? I'd love to come grab it. I can pay your asking price in cash. When would be a good time?";
   }
   const offer = Math.max(5, Math.round((listing.price * HAGGLE_RATIO) / 5) * 5);
   if (offer >= listing.price) {
-    return `${greeting} ${pickup} When works for you?`;
+    return "Hi! Is this still available? I can come get it with cash in hand. When would be a good time?";
   }
-  return `${greeting} ${pickup} Would you take $${offer}?`;
+  return `Hi! Is this still available? I can come get it with cash in hand. Would $${offer} work?`;
 }
 
 interface Comparable {
