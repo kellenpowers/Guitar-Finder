@@ -20,6 +20,7 @@ import { saveCookies } from "./scrapers/facebook.js";
 import { runSearch } from "./services/scheduler.js";
 import { startScheduler } from "./services/scheduler.js";
 import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
+import { ebayApiSelfTest } from "./scrapers/ebay.js";
 import { getDb } from "./db/index.js";
 
 // A stray error from a background scrape must never kill the whole app
@@ -129,6 +130,9 @@ const server = app.listen(PORT, () => {
 
   // Start the scheduler
   startScheduler();
+
+  // Say immediately whether official eBay API access works
+  ebayApiSelfTest().catch(() => {});
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

@@ -177,6 +177,24 @@ describe("parseCraigslistHtml", () => {
     });
   });
 
+  it("parses Oct-2026 gallery cards: data-pid ids, no .html links", () => {
+    const html = `
+      <li class="cl-search-result" data-pid="7812345678" title="Canon AE-1 camera">
+        <div class="gallery-card">
+          <a class="main" href="#"></a>
+          <span class="label">Canon AE-1 camera</span>
+          <span class="priceinfo">$120</span>
+        </div>
+      </li>`;
+    const [item] = parseCraigslistHtml(html, "https://savannah.craigslist.org/search/ela?sort=date");
+    expect(item).toMatchObject({
+      externalId: "7812345678",
+      title: "Canon AE-1 camera",
+      price: 120,
+      listingUrl: "https://savannah.craigslist.org/ela/d/flip/7812345678.html",
+    });
+  });
+
   it("dedupes listings that appear in both markups", () => {
     const html = `
       <li class="cl-static-search-result" title="Amp"><a href="https://x.craigslist.org/d/1.html"><div class="title">Amp</div></a></li>
