@@ -7,26 +7,50 @@ import { fetchRenderedHtml, pageTitleOf } from "./browser.js";
 // that needs no login or JavaScript. The site subdomain (e.g. "austin" in
 // austin.craigslist.org) comes from the CRAIGSLIST_SITE env var.
 
-export function parseCraigslistHtml(html: string): ScrapedListing[] {
+export function parseCraigslistHtml(html: string, sourceUrl?: string): ScrapedListing[] {
   const $ = cheerio.load(html);
   const byId = new Map<string, ScrapedListing>();
 
+  // For constructing posting URLs when cards carry only a data-pid
+  // (Craigslist's stable listing id) and no .html link
+  let origin = "";
+  let section = "sss";
+  if (sourceUrl) {
+    try {
+      const u = new URL(sourceUrl);
+      origin = u.origin;
+      section = u.pathname.match(/\/search\/([a-z]+)/)?.[1] || "sss";
+    } catch {
+      // leave defaults
+    }
+  }
+
   // Craigslist has several markups: the no-JS fallback (cl-static-search-result),
   // the rendered app (cl-search-result), and gallery cards. Handle all of them,
-  // on any tag.
+  // on any tag. Ids come from the href when it's a classic /<pid>.html link,
+  // or from data-pid when the links changed shape (seen Oct 2026).
   $(".cl-static-search-result, .cl-search-result, .gallery-card").each((_i, el) => {
     const card = $(el);
-    const href =
+    let href =
       card.find("a[href*='.html']").first().attr("href") ||
       card.find("a").first().attr("href") ||
       "";
-    const externalId = href.match(/\/(\d+)\.html/)?.[1] || "";
+    const pid =
+      card.attr("data-pid") || card.find("[data-pid]").first().attr("data-pid") || "";
+    const externalId = href.match(/\/(\d+)\.html/)?.[1] || pid;
     if (!externalId || byId.has(externalId)) return;
+
+    if (!/\d+\.html/.test(href)) {
+      // Construct the canonical posting URL from the pid (slug is tolerant)
+      href = origin
+        ? `${origin}/${section}/d/flip/${externalId}.html`
+        : href;
+    }
 
     const title =
       card.attr("title") ||
       card
-        .find(".title, .titlestring, .posting-title .label, .cl-app-anchor .label")
+        .find(".title, .titlestring, .posting-title .label, .cl-app-anchor .label, .label")
         .first()
         .text()
         .trim();
@@ -35,7 +59,7 @@ export function parseCraigslistHtml(html: string): ScrapedListing[] {
     const location = card.find(".location, .meta .separator + span").first().text().trim();
     const imageUrl = card.find("img").first().attr("src") || "";
 
-    if (title) {
+    if (title && href) {
       byId.set(externalId, {
         externalId,
         title,
@@ -93,13 +117,13 @@ const RESULT_SELECTORS = ".cl-search-result, .cl-static-search-result, .gallery-
 
 async function fetchAndParse(url: string): Promise<ScrapedListing[]> {
   const html = await fetchRenderedHtml(url, 1500, RESULT_SELECTORS);
-  const listings = parseCraigslistHtml(html);
+  const listings = parseCraigslistHtml(html, url);
   if (listings.length === 0) {
-    const postingLinks = (html.match(/\/d\/[^"]*\/\d+\.html/g) || []).length;
+    const resultCards = (html.match(/cl-search-result|gallery-card/g) || []).length;
     console.warn(
       `Craigslist returned 0 parseable results (page title: "${pageTitleOf(html)}", ` +
-        `posting links in page: ${postingLinks}) — ` +
-        (postingLinks > 0
+        `result cards in page: ${resultCards}) — ` +
+        (resultCards > 0
           ? "markup changed, parser needs updating."
           : "likely a bot check, wrong site subdomain, or genuinely no results.")
     );

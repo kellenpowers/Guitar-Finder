@@ -48,14 +48,32 @@ function reverbHeaders(): Record<string, string> | null {
   };
 }
 
+// The price-guide endpoint needs an entitlement standard tokens may lack;
+// a 403 means "not for this token" and will 403 forever, so stop asking.
+let priceGuideDisabled = false;
+
 // Reverb's price guide is built from actual completed sales — the strongest signal
 export async function checkReverbPriceGuide(query: string): Promise<PriceCheckResult | null> {
+  if (priceGuideDisabled) return null;
   const headers = reverbHeaders();
   if (!headers) return null;
 
   try {
     const params = new URLSearchParams({ query });
-    const data = await reverbFetch(`${REVERB_API_BASE}/priceguide?${params}`, headers);
+    const res = await fetch(`${REVERB_API_BASE}/priceguide?${params}`, { headers });
+    if (res.status === 403) {
+      priceGuideDisabled = true;
+      console.warn(
+        "Reverb's price guide isn't enabled for this API token (403) — using " +
+          "asking-price comps for music gear instead. (Skipping further price-guide calls.)"
+      );
+      return null;
+    }
+    if (!res.ok) {
+      console.warn(`Reverb API returned ${res.status} for priceguide`);
+      return null;
+    }
+    const data = await res.json();
     const estimates = data?.estimates;
     if (!estimates || estimates.length === 0) return null;
 

@@ -189,6 +189,35 @@ export class EbayScraper implements Scraper {
 
 export const ebayScraper = new EbayScraper();
 
+// Verifies the Browse API keyset at startup so the log says immediately
+// whether official eBay access works, without waiting for a sweep.
+export async function ebayApiSelfTest(): Promise<void> {
+  if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) return;
+  try {
+    const results = await browseSearch({
+      query: "guitar",
+      location: "",
+      radiusMiles: 25,
+      maxPrice: null,
+    });
+    console.log(`eBay official API: WORKING (${results.length} results on test query).`);
+  } catch (err) {
+    console.warn(
+      `eBay official API test FAILED: ${err instanceof Error ? err.message : err} — ` +
+        "eBay search will fall back to scraping. Usual causes: the Marketplace " +
+        "Account Deletion exemption isn't completed, or eBay hasn't enabled " +
+        "production buy scopes on this keyset yet."
+    );
+  }
+}
+
+// After this many consecutive bot-check pages, stop trying sold lookups for
+// the rest of the session — each failure costs ~2 slow page loads, and a
+// blocked machine stays blocked for a while.
+const SOLD_BREAKER_LIMIT = 3;
+let soldErrorStreak = 0;
+let soldScrapeDisabled = false;
+
 // Estimate market value from recently SOLD eBay listings (median price).
 // Used as a valuation fallback for items Reverb doesn't cover (cameras, etc.).
 export async function fetchEbaySoldEstimate(query: string): Promise<{
@@ -203,12 +232,28 @@ export async function fetchEbaySoldEstimate(query: string): Promise<{
     LH_Complete: "1",
     _sop: "13", // most recently sold first
   });
+  if (soldScrapeDisabled) return null;
+
   const url = `https://www.ebay.com/sch/i.html?${params.toString()}`;
 
   const html = await fetchEbayHtml(url);
   const allSold = parseEbayHtml(html);
   if (allSold.length === 0) {
-    console.warn(`eBay sold search parsed 0 items (page title: "${pageTitleOf(html)}")`);
+    const pageTitle = pageTitleOf(html);
+    console.warn(`eBay sold search parsed 0 items (page title: "${pageTitle}")`);
+    if (pageTitle.includes("Error Page")) {
+      soldErrorStreak++;
+      if (soldErrorStreak >= SOLD_BREAKER_LIMIT) {
+        soldScrapeDisabled = true;
+        console.warn(
+          "eBay is blocking sold-listings pages from this machine — skipping further " +
+            "sold lookups until the app restarts. Valuations fall back to Reverb. " +
+            "(Marketplace Insights approval would replace this scrape with official data.)"
+        );
+      }
+    }
+  } else {
+    soldErrorStreak = 0;
   }
 
   // Drop "similar item" noise that doesn't actually match what we're valuing,
