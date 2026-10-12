@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
   if (action === "update") {
     const allowed: Record<string, unknown> = {};
-    for (const key of ["title", "status", "bought_price", "target_price", "listing_draft", "photos"]) {
+    for (const key of ["title", "status", "bought_price", "target_price", "listing_draft", "photos", "video_url"]) {
       if (key in body) allowed[key] = body[key];
     }
     allowed.updated_at = new Date().toISOString();
@@ -94,7 +94,7 @@ Deno.serve(async (req: Request) => {
 
   if (action === "queue") {
     const kind = String(body.kind || "");
-    if (!["list_reverb", "list_ebay"].includes(kind)) return json({ error: "unknown command" }, 400);
+    if (!["list_reverb", "list_ebay", "import_reverb"].includes(kind)) return json({ error: "unknown command" }, 400);
     const { data, error } = await supabase
       .from("commands")
       .insert({ kind, payload: body.payload ?? {} })
@@ -149,6 +149,39 @@ Deno.serve(async (req: Request) => {
       }
     }
     return json({ ok: true });
+  }
+
+  if (action === "bulkUpsert") {
+    if (!hasMacKey) return json({ error: "unauthorized" }, 401);
+    const items = Array.isArray(body.items) ? body.items.slice(0, 200) : [];
+    let created = 0;
+    let updated = 0;
+    for (const raw of items) {
+      const fields = {
+        title: String(raw.title || "Untitled item").slice(0, 300),
+        status: raw.status || "listed",
+        target_price: raw.target_price ?? null,
+        photos: Array.isArray(raw.photos) ? raw.photos : [],
+        listing_draft: String(raw.listing_draft || ""),
+        reverb_url: raw.reverb_url ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      if (fields.reverb_url) {
+        const { data: existing } = await supabase
+          .from("inventory")
+          .select("id")
+          .eq("reverb_url", fields.reverb_url)
+          .maybeSingle();
+        if (existing) {
+          await supabase.from("inventory").update(fields).eq("id", existing.id);
+          updated++;
+          continue;
+        }
+      }
+      await supabase.from("inventory").insert(fields);
+      created++;
+    }
+    return json({ created, updated });
   }
 
   return json({ error: "unknown action" }, 400);

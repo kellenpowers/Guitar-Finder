@@ -370,6 +370,22 @@ describe("computeFlipScore", () => {
   });
 });
 
+describe("platform fee pricing", () => {
+  it("eBay price nets the same as the Reverb price after both platforms' cuts", async () => {
+    const { ebayPriceMatchingReverbNet, REVERB_FEE_PCT, EBAY_FEE_PCT } = await import(
+      "../services/fees.js"
+    );
+    const reverbPrice = 500;
+    const ebayPrice = ebayPriceMatchingReverbNet(reverbPrice);
+    const reverbNet = reverbPrice * (1 - REVERB_FEE_PCT);
+    const ebayNet = ebayPrice * (1 - EBAY_FEE_PCT);
+    expect(ebayPrice).toBeGreaterThan(reverbPrice); // eBay's cut is bigger
+    expect(ebayNet).toBeGreaterThanOrEqual(reverbNet); // never nets less
+    expect(ebayNet - reverbNet).toBeLessThan(2); // and only cents more
+    expect(String(ebayPrice)).toMatch(/\.99$/);
+  });
+});
+
 describe("citySlug", () => {
   it("lowercases and strips the state", () => {
     expect(citySlug("Savannah, GA")).toBe("savannah");

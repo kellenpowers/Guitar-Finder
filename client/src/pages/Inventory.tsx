@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
-  generateListingDraft, queueListOnReverb, type InventoryItem,
+  generateListingDraft, queueListOnReverb, queueImportReverb, type InventoryItem,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -118,6 +118,19 @@ export default function Inventory() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={async () => {
+              try {
+                await queueImportReverb();
+                alert("Import queued — the studio Mac pulls your live Reverb listings within a minute. Tap Refresh after.");
+              } catch {
+                alert("Couldn't queue the import. Check your connection.");
+              }
+            }}
+            className="px-3 py-1.5 bg-orange-100 text-orange-800 text-sm rounded hover:bg-orange-200"
+          >
+            Import Reverb
+          </button>
+          <button
             onClick={() => load()}
             className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
           >
@@ -218,6 +231,17 @@ export default function Inventory() {
                 </label>
               </div>
 
+              <input
+                type="url"
+                defaultValue={item.video_url || ""}
+                placeholder="YouTube video link (unlisted) — attaches to the Reverb listing"
+                onBlur={(e) => {
+                  if (e.target.value !== (item.video_url || "")) {
+                    saveField(item, { video_url: e.target.value || null });
+                  }
+                }}
+                className="w-full border rounded p-2 text-sm mt-3"
+              />
               <textarea
                 defaultValue={item.listing_draft}
                 rows={5}
