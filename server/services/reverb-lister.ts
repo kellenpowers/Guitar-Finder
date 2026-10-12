@@ -11,6 +11,7 @@ export interface ReverbListingRequest {
   price: number | null;
   description: string;
   photoUrls: string[];
+  videoUrl?: string | null;
 }
 
 export interface ReverbListingResult {
@@ -41,6 +42,9 @@ export async function createReverbDraft(
   };
   if (req.price && req.price > 0) {
     body.price = { amount: req.price.toFixed(2), currency: "USD" };
+  }
+  if (req.videoUrl && /youtu\.?be/.test(req.videoUrl)) {
+    body.youtube_video_url = req.videoUrl;
   }
 
   const res = await fetch("https://api.reverb.com/api/listings", {

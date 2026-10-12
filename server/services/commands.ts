@@ -1,4 +1,5 @@
 import { createReverbDraft } from "./reverb-lister.js";
+import { importReverbListings } from "./reverb-importer.js";
 
 // The phone queues listing commands in the cloud; the Mac (which holds all
 // API tokens in .env) polls here, executes them, and reports back.
@@ -14,7 +15,7 @@ function inventoryFnUrl(): string | null {
   return publishUrl.replace(/\/publish\/?$/, "/inventory");
 }
 
-async function callCloud(body: Record<string, unknown>): Promise<any> {
+export async function callCloud(body: Record<string, unknown>): Promise<any> {
   const url = inventoryFnUrl();
   if (!url) throw new Error("cloud not configured");
   const res = await fetch(url, {
@@ -33,12 +34,24 @@ async function callCloud(body: Record<string, unknown>): Promise<any> {
 async function runCommand(command: any): Promise<void> {
   const payload = command.payload || {};
 
+  if (command.kind === "import_reverb") {
+    const result = await importReverbListings();
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: "done",
+      result: { ok: true, ...result },
+    });
+    return;
+  }
+
   if (command.kind === "list_reverb") {
     const result = await createReverbDraft({
       title: String(payload.title || ""),
       price: payload.price ?? null,
       description: String(payload.description || ""),
       photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
+      videoUrl: payload.video_url ? String(payload.video_url) : null,
     });
     await callCloud({
       action: "complete",

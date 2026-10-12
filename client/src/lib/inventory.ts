@@ -16,6 +16,7 @@ export interface InventoryItem {
   listing_draft: string;
   reverb_url?: string | null;
   ebay_url?: string | null;
+  video_url?: string | null;
   created_at: string;
 }
 
@@ -81,12 +82,20 @@ export async function queueListOnReverb(item: InventoryItem): Promise<void> {
       price: item.target_price,
       description: item.listing_draft,
       photo_urls: item.photos.map(photoUrl),
+      video_url: item.video_url || null,
     },
   });
 }
 
 export function photoUrl(path: string): string {
+  // Imported Reverb listings carry absolute photo URLs; our own uploads are
+  // storage paths
+  if (/^https?:\/\//.test(path)) return path;
   return `${SUPABASE_BASE}/storage/v1/object/public/photos/${path}`;
+}
+
+export async function queueImportReverb(): Promise<void> {
+  await call("POST", { action: "queue", kind: "import_reverb", payload: {} });
 }
 
 // Resale listing draft in the owner's voice: no em dashes, no stock filler,
