@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { KEEP_PRICE_MIN } from "../services/listing-filter.js";
 
 export function initSchema(db: Database.Database): void {
   db.exec(`
@@ -78,6 +79,30 @@ export function initSchema(db: Database.Database): void {
   migrateSourceCheck(db);
   migrateValueSource(db);
   purgeDollarServiceAds(db);
+  purgeBadgeTitleRows(db);
+}
+
+// One-time cleanup #2: a Facebook layout change briefly made every card parse
+// its "Just listed" badge as the title, so those rows carry garbage titles and
+// valuations run against the query "Just listed". Delete them (live items get
+// re-found with correct titles next sweep), drop the poisoned valuation cache
+// entries, and clear pre-filter rows under the junk price floor.
+function purgeBadgeTitleRows(db: Database.Database): void {
+  const done = db
+    .prepare("SELECT value FROM settings WHERE key = 'badge_rows_purged'")
+    .get();
+  if (done) return;
+  const badges = ["just listed", "just relisted", "price drop", "reduced", "sponsored", "free", "pending", "new"];
+  const ph = badges.map(() => "?").join(",");
+  const titles = db.prepare(`DELETE FROM listings WHERE lower(title) IN (${ph})`).run(...badges);
+  const cheap = db.prepare("DELETE FROM listings WHERE price < ?").run(KEEP_PRICE_MIN);
+  db.prepare(`DELETE FROM valuation_cache WHERE lower(query) IN (${ph})`).run(...badges);
+  db.prepare("INSERT INTO settings (key, value) VALUES ('badge_rows_purged', '1')").run();
+  if (titles.changes > 0 || cheap.changes > 0) {
+    console.log(
+      `Purged ${titles.changes} mis-parsed "Just listed" rows and ${cheap.changes} under-$${KEEP_PRICE_MIN} junk rows.`
+    );
+  }
 }
 
 // One-time cleanup: free/$1 "listings" are service ads, never flippable items
