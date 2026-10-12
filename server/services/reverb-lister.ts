@@ -1,3 +1,5 @@
+import { removePriceTalk } from "./listing-text.js";
+
 // Creates DRAFT listings on Reverb through its official API, at the owner's
 // explicit request (CLAUDE.md hard rule 1, owner's Oct 2026 decision).
 // Drafts, not live listings: the owner reviews and taps Publish on Reverb.
@@ -31,11 +33,15 @@ export async function createReverbDraft(
   const make = words[0] || "Unknown";
   const model = words.slice(1).join(" ") || req.title;
 
+  // Reverb shows the price itself; a price written into the text goes stale
+  // the moment the price changes, so strip price-talk sentences
+  const description = removePriceTalk(req.description) || req.title;
+
   const body: Record<string, unknown> = {
     title: req.title.slice(0, 80),
     make,
     model,
-    description: req.description,
+    description,
     condition: { slug: LISTING_CONDITION_SLUG },
     photos: req.photoUrls,
     publish: PUBLISH_IMMEDIATELY,

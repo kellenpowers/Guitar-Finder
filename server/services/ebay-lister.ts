@@ -1,6 +1,7 @@
 import { getEbayUserToken } from "./ebay-auth.js";
 import { getEbayAppToken } from "../scrapers/ebay.js";
 import { ebayPriceMatchingReverbNet } from "./fees.js";
+import { removePriceTalk } from "./listing-text.js";
 
 // Creates LIVE eBay fixed-price listings through the official Trading API,
 // at the owner's explicit per-item tap (CLAUDE.md rule 1, Oct 2026 decision).
@@ -105,7 +106,10 @@ export async function createEbayListing(
 
   const price = ebayAskPrice(req.targetPrice, req.reverbLinked);
   const categoryId = await suggestCategoryId(req.title);
-  const descriptionHtml = xmlEscape(req.description).replace(/\n/g, "<br/>");
+  // The eBay price is raised above the target to cover fees, so any price
+  // written into the description text would contradict the listing — strip it
+  const description = removePriceTalk(req.description) || req.title;
+  const descriptionHtml = xmlEscape(description).replace(/\n/g, "<br/>");
   const pictures = req.photoUrls
     .slice(0, 12)
     .map((u) => `<PictureURL>${xmlEscape(u)}</PictureURL>`)

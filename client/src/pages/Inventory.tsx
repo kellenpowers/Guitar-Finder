@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
-  generateListingDraft, queueListOnReverb, queueImportReverb, queueListOnEbay,
-  type InventoryItem,
+  generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
+  queueListOnEbay, type InventoryItem,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -102,9 +102,15 @@ export default function Inventory() {
   }
 
   async function saveField(item: InventoryItem, fields: Partial<InventoryItem>) {
+    // Optimistic: a same-gesture tap (edit the price, then tap List on eBay)
+    // must see the new value instead of waiting out the network round-trip
+    setItems((prev) => (prev || []).map((i) => (i.id === item.id ? { ...i, ...fields } : i)));
     const updated = await updateItem(item.id, fields).catch(() => null);
     if (updated) {
       setItems((prev) => (prev || []).map((i) => (i.id === item.id ? updated : i)));
+    } else {
+      alert("Couldn't save that change — check your connection and try again.");
+      load();
     }
   }
 
@@ -187,10 +193,33 @@ export default function Inventory() {
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
                   <h3 className="font-medium">{item.title}</h3>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-500 flex items-center gap-1 flex-wrap">
                     {item.bought_price != null && <>Paid ${item.bought_price.toLocaleString()} · </>}
-                    {item.target_price != null && <>Target ${item.target_price.toLocaleString()} · </>}
-                    Added {new Date(item.created_at).toLocaleDateString()}
+                    <span>Target $</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="any"
+                      key={`price-${item.id}-${item.target_price ?? ""}`}
+                      defaultValue={item.target_price ?? ""}
+                      placeholder="—"
+                      onBlur={(e) => {
+                        // iOS reports unparseable input as "" — don't let a typo
+                        // silently clear the price
+                        if (e.target.validity?.badInput) {
+                          return alert("That price didn't read as a number — digits only, like 450.");
+                        }
+                        const v = e.target.value ? Number(e.target.value) : null;
+                        if (v === (item.target_price ?? null)) return;
+                        if (v != null && !(v > 0)) {
+                          return alert("Enter a price above 0, or leave it blank.");
+                        }
+                        saveField(item, { target_price: v });
+                      }}
+                      className="w-20 border rounded px-1 py-0.5 text-sm text-gray-700"
+                    />
+                    <span>· Added {new Date(item.created_at).toLocaleDateString()}</span>
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -310,7 +339,8 @@ export default function Inventory() {
                 )}
                 <button
                   onClick={async () => {
-                    const ok = await copyText(item.listing_draft);
+                    // Keep any "Asking $X" line in step with the current price
+                    const ok = await copyText(syncAskingPrice(item.listing_draft, item.target_price ?? null));
                     alert(ok ? "Listing copied. Paste it into eBay or Reverb." : "Couldn't copy, select the text manually.");
                   }}
                   className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"

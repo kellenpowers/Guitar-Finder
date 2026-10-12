@@ -113,6 +113,17 @@ export async function queueListOnEbay(item: InventoryItem): Promise<void> {
   });
 }
 
+// Applied at copy time so any "Asking $X" line matches the CURRENT target
+// price — the copied text gets pasted places that don't show a price. (The
+// Reverb/eBay listers strip price talk anyway; those platforms show the price.)
+export function syncAskingPrice(draft: string, price: number | null): string {
+  if (!price || price <= 0) return draft;
+  return draft.replace(
+    /(asking(?:\s+price)?(?:\s+is|:)?(?:\s+for)?\s*\$?\s*)[\d,]+(?:\.\d+)?/gi,
+    (_m, lead) => `${lead}${Math.round(price)}`
+  );
+}
+
 // Resale listing draft in the owner's voice: no em dashes, no stock filler,
 // honest and warm. The bracketed line is the one part he fills in.
 export function generateListingDraft(title: string, targetPrice?: number | null): string {
