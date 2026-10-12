@@ -3,6 +3,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import SearchConfig from "./pages/SearchConfig";
 import Listings from "./pages/Listings";
+import Inventory from "./pages/Inventory";
 import { isCloud, getPasscode, setPasscode, loadSnapshot } from "./api";
 
 function PasscodeGate({ onUnlocked }: { onUnlocked: () => void }) {
@@ -86,6 +87,9 @@ export default function App() {
           <Link to="/listings" className="text-sm text-gray-600 hover:text-gray-900">
             All Listings
           </Link>
+          <Link to="/inventory" className="text-sm text-gray-600 hover:text-gray-900">
+            Inventory
+          </Link>
           {isCloud && (
             <button
               onClick={() => window.location.reload()}
@@ -101,6 +105,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/searches" element={<SearchConfig />} />
           <Route path="/listings" element={<Listings />} />
+          <Route path="/inventory" element={<Inventory />} />
         </Routes>
       </main>
     </div>
