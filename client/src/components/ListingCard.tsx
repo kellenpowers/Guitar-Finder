@@ -2,6 +2,9 @@ import { useState } from "react";
 import DealBadge from "./DealBadge";
 import { api } from "../api";
 import { draftSellerMessage, counterLadder } from "../lib/negotiation";
+import { createItem, generateListingDraft } from "../lib/inventory";
+import { getPasscode, setPasscode } from "../api";
+import { copyText } from "../lib/clipboard";
 
 interface ListingCardProps {
   listing: {
@@ -88,25 +91,6 @@ const VALUE_SOURCE_LABELS: Record<string, string> = {
   reverb_asking: "Reverb asking",
 };
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-}
-
 export default function ListingCard({ listing }: ListingCardProps) {
   const [showComps, setShowComps] = useState(false);
   const [comps, setComps] = useState<Comparable[] | null>(null);
@@ -137,6 +121,31 @@ export default function ListingCard({ listing }: ListingCardProps) {
         draftSellerMessage(listing, { followUp: next })
     );
     setCopied(false);
+  }
+
+  async function handleBought(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!getPasscode()) {
+      const code = prompt("Enter your Flip Finder passcode (same as the phone app):");
+      if (!code) return;
+      setPasscode(code);
+    }
+    const paid = prompt("Nice! What did you pay?", String(listing.price));
+    if (paid == null) return;
+    const target = listing.estimated_market_value ?? null;
+    const item = await createItem({
+      title: listing.title,
+      bought_price: Number(paid) || listing.price,
+      target_price: target,
+      source_url: listing.listing_url,
+      listing_draft: generateListingDraft(listing.title, target),
+    }).catch(() => null);
+    alert(
+      item
+        ? "Added to Inventory. Add photos there when you have it in hand."
+        : "Couldn't add it, check the passcode and try again from the Inventory tab."
+    );
   }
 
   async function handleCopyAndOpen() {
@@ -228,6 +237,12 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   Draft message
                 </button>
               )}
+              <button
+                onClick={handleBought}
+                className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium hover:bg-emerald-100"
+              >
+                Bought
+              </button>
               {listing.estimated_market_value && (
                 <button
                   onClick={openComps}
