@@ -1,4 +1,4 @@
-import { callCloud } from "./commands.js";
+import { callCloud, fetchCloudInventory } from "./commands.js";
 
 // Imports the owner's LIVE Reverb listings into the cloud inventory so they
 // can be cross-listed to eBay (with fee-adjusted pricing) when that's live.
@@ -49,9 +49,23 @@ export async function importReverbListings(): Promise<{ imported: number; update
   }
 
   if (items.length === 0) return { imported: 0, updated: 0 };
-  const result = await callCloud({ action: "bulkUpsert", items });
-  console.log(
-    `Reverb import: ${result.created} new, ${result.updated} updated (${items.length} live listings).`
+
+  // Never clobber the owner's phone edits: an item already in inventory (same
+  // reverb_url) keeps its price, draft, and status — import only ADDS listings
+  // we don't have yet. (If this fetch fails the whole import errors and can be
+  // retried, rather than falling back to overwriting.)
+  const existing = new Set(
+    (await fetchCloudInventory()).map((i: any) => i.reverb_url).filter(Boolean)
   );
-  return { imported: result.created ?? 0, updated: result.updated ?? 0 };
+  const fresh = items.filter((i) => !existing.has(i.reverb_url));
+  if (fresh.length === 0) {
+    console.log(`Reverb import: all ${items.length} live listings already in inventory — nothing changed.`);
+    return { imported: 0, updated: 0 };
+  }
+
+  const result = await callCloud({ action: "bulkUpsert", items: fresh });
+  console.log(
+    `Reverb import: ${result.created} new (${items.length - fresh.length} already in inventory, left untouched).`
+  );
+  return { imported: result.created ?? 0, updated: 0 };
 }

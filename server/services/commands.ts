@@ -44,6 +44,39 @@ export async function callCloud(body: Record<string, unknown>): Promise<any> {
   return data;
 }
 
+// Cloud storage paths -> public URLs (imported Reverb photos are already absolute)
+function photoUrlFromPath(p: string): string {
+  if (/^https?:\/\//.test(p)) return p;
+  const base = (process.env.PUBLISH_URL || "").replace(/\/functions\/.*$/, "");
+  return base ? `${base}/storage/v1/object/public/photos/${p}` : p;
+}
+
+// The payload was snapshotted when the owner tapped the button, but the Mac
+// may run it up to a minute (or a sleep) later. Re-read the item's CURRENT
+// fields so a price or draft edited in between can't publish stale.
+async function withFreshFields(payload: any): Promise<any> {
+  if (!payload.inventory_id) return payload;
+  try {
+    const items = await fetchCloudInventory();
+    const row = items.find((i: any) => i.id === payload.inventory_id);
+    if (!row) return payload;
+    return {
+      ...payload,
+      title: row.title ?? payload.title,
+      price: row.target_price ?? null,
+      description: row.listing_draft ?? payload.description,
+      photo_urls:
+        Array.isArray(row.photos) && row.photos.length > 0
+          ? row.photos.map(photoUrlFromPath)
+          : payload.photo_urls,
+      video_url: row.video_url ?? payload.video_url ?? null,
+      reverb_linked: row.reverb_url ? true : !!payload.reverb_linked,
+    };
+  } catch {
+    return payload; // cloud hiccup — the tap-time snapshot is still internally consistent
+  }
+}
+
 async function runCommand(command: any): Promise<void> {
   const payload = command.payload || {};
 
@@ -59,12 +92,13 @@ async function runCommand(command: any): Promise<void> {
   }
 
   if (command.kind === "list_ebay") {
+    const fresh = await withFreshFields(payload);
     const result = await createEbayListing({
-      title: String(payload.title || ""),
-      targetPrice: payload.price ?? null,
-      description: String(payload.description || ""),
-      photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
-      reverbLinked: !!payload.reverb_linked,
+      title: String(fresh.title || ""),
+      targetPrice: fresh.price ?? null,
+      description: String(fresh.description || ""),
+      photoUrls: Array.isArray(fresh.photo_urls) ? fresh.photo_urls : [],
+      reverbLinked: !!fresh.reverb_linked,
     });
     await callCloud({
       action: "complete",
@@ -78,12 +112,13 @@ async function runCommand(command: any): Promise<void> {
   }
 
   if (command.kind === "list_reverb") {
+    const fresh = await withFreshFields(payload);
     const result = await createReverbDraft({
-      title: String(payload.title || ""),
-      price: payload.price ?? null,
-      description: String(payload.description || ""),
-      photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
-      videoUrl: payload.video_url ? String(payload.video_url) : null,
+      title: String(fresh.title || ""),
+      price: fresh.price ?? null,
+      description: String(fresh.description || ""),
+      photoUrls: Array.isArray(fresh.photo_urls) ? fresh.photo_urls : [],
+      videoUrl: fresh.video_url ? String(fresh.video_url) : null,
     });
     await callCloud({
       action: "complete",
