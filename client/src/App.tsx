@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import SearchConfig from "./pages/SearchConfig";
 import Listings from "./pages/Listings";
 import Inventory from "./pages/Inventory";
+import EbayConnected from "./pages/EbayConnected";
 import { isCloud, getPasscode, setPasscode, loadSnapshot } from "./api";
 
 function PasscodeGate({ onUnlocked }: { onUnlocked: () => void }) {
@@ -54,6 +55,12 @@ function PasscodeGate({ onUnlocked }: { onUnlocked: () => void }) {
 export default function App() {
   const [unlocked, setUnlocked] = useState(!isCloud);
   const [checking, setChecking] = useState(isCloud && !!getPasscode());
+
+  // The eBay consent landing page only displays what's already in the URL —
+  // no passcode gate, because the authorization code expires in minutes
+  if (window.location.pathname === "/ebay-connected") {
+    return <EbayConnected />;
+  }
 
   useEffect(() => {
     if (isCloud && getPasscode()) {

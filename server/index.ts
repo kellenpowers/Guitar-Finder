@@ -22,6 +22,7 @@ import { startScheduler } from "./services/scheduler.js";
 import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { ebayApiSelfTest } from "./scrapers/ebay.js";
 import { startCommandRunner } from "./services/commands.js";
+import { consentUrl, exchangeConsentCode, ebayConnection } from "./services/ebay-auth.js";
 import { getDb } from "./db/index.js";
 
 // A stray error from a background scrape must never kill the whole app
@@ -87,6 +88,29 @@ app.post("/api/scrape/facebook/cookies", async (req, res) => {
     console.error("Cookie save failed:", err);
     res.status(500).json({ error: "Failed to save cookies" });
   }
+});
+
+// eBay account consent: build the sign-in URL, accept the pasted code, report status
+app.get("/api/ebay/consent-url", (_req, res) => {
+  const url = consentUrl();
+  if (!url) {
+    return res.status(400).json({
+      error: "EBAY_RUNAME (plus client id/secret) must be set in .env first.",
+    });
+  }
+  res.json({ url });
+});
+
+app.post("/api/ebay/connect", async (req, res) => {
+  const input = String(req.body?.code || "");
+  if (!input.trim()) return res.status(400).json({ error: "Paste the code or the full URL." });
+  const result = await exchangeConsentCode(input);
+  if (!result.ok) return res.status(400).json(result);
+  res.json({ ok: true });
+});
+
+app.get("/api/ebay/status", (_req, res) => {
+  res.json(ebayConnection());
 });
 
 // Kick off a discovery sweep now (runs in the background; results appear as found)

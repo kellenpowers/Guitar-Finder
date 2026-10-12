@@ -33,7 +33,9 @@ estimated profit after resale fees, shipping, and the pickup drive
    visible browser for the owner to log in themselves. Session cookies live in `server/data/` (gitignored) and must
    never be committed, logged, or sent anywhere except facebook.com.
 3. **Secrets stay in `.env`** (gitignored). Never commit tokens or cookies;
-   never print them in logs or chat.
+   never print them in logs or chat. One exception by necessity: the eBay
+   user refresh token obtained via OAuth consent is stored in the local
+   gitignored SQLite settings table (`ebay_refresh_token`).
 4. **Be a polite scraper.** Keep the randomized delays and rate limits.
    Don't raise scrape frequency defaults or remove delays without the owner
    asking; aggressive scraping risks their accounts and IP.
