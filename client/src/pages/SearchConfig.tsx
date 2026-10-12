@@ -27,6 +27,46 @@ function SearchConfigInner() {
   const [cookieText, setCookieText] = useState("");
   const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
   const [backfilling, setBackfilling] = useState(false);
+  const [ebayConnected, setEbayConnected] = useState<boolean | null>(null);
+  const [ebayCode, setEbayCode] = useState("");
+
+  useEffect(() => {
+    api("/api/ebay/status")
+      .then((r) => r.json())
+      .then((d) => setEbayConnected(!!d.connected))
+      .catch(() => setEbayConnected(null));
+  }, []);
+
+  async function handleEbayConsent() {
+    try {
+      const res = await api("/api/ebay/consent-url");
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || "Set EBAY_RUNAME in .env first.");
+      window.open(data.url, "_blank");
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+  }
+
+  async function handleEbayCode() {
+    try {
+      const res = await api("/api/ebay/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: ebayCode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEbayConnected(true);
+        setEbayCode("");
+        alert("eBay connected! Listing to eBay is now unlocked.");
+      } else {
+        alert(data.error || "That code didn't work — codes expire in ~5 minutes, try the Connect button again.");
+      }
+    } catch {
+      alert("Couldn't reach the server. Is it running?");
+    }
+  }
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [showDefaultsModal, setShowDefaultsModal] = useState(false);
   const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string>>({});
@@ -205,6 +245,45 @@ function SearchConfigInner() {
             + New Search
           </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg border p-4 mb-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="font-semibold">eBay account</h2>
+            <p className="text-sm text-gray-500">
+              {ebayConnected === true
+                ? "Connected — listing to eBay is unlocked."
+                : "Connect once so the app can create your eBay listings."}
+            </p>
+          </div>
+          {ebayConnected !== true && (
+            <button
+              onClick={handleEbayConsent}
+              className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+            >
+              Connect eBay (opens sign-in)
+            </button>
+          )}
+        </div>
+        {ebayConnected !== true && (
+          <div className="flex gap-2 mt-3">
+            <input
+              type="text"
+              value={ebayCode}
+              onChange={(e) => setEbayCode(e.target.value)}
+              placeholder="Paste the code from the green page here (within 5 minutes)"
+              className="flex-1 border rounded p-2 text-sm"
+            />
+            <button
+              onClick={handleEbayCode}
+              disabled={!ebayCode.trim()}
+              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Finish
+            </button>
+          </div>
+        )}
       </div>
 
       {showForm && (
