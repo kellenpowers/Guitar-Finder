@@ -370,6 +370,25 @@ describe("computeFlipScore", () => {
   });
 });
 
+describe("isJunkListing (service-ad filter)", () => {
+  it("drops free/$1 ads and service phrases regardless of price", async () => {
+    const { isJunkListing, isServiceAd } = await import("../services/listing-filter.js");
+    expect(isJunkListing("Lawn care - best rates!", 1)).toBe(true);
+    expect(isJunkListing("Free couch", 0)).toBe(true);
+    expect(isServiceAd("We buy junk cars, cash for your car today")).toBe(true);
+    expect(isServiceAd("Junk removal and hauling, free estimates")).toBe(true);
+    expect(isServiceAd("Pressure washing, licensed and insured")).toBe(true);
+  });
+
+  it("keeps real items, including ones with tricky words", async () => {
+    const { isJunkListing, isServiceAd } = await import("../services/listing-filter.js");
+    expect(isJunkListing("Fender Stratocaster", 500)).toBe(false);
+    expect(isServiceAd("Mesa Boogie service manual and footswitch")).toBe(false);
+    expect(isServiceAd("Pioneer DJ controller DDJ-400")).toBe(false);
+    expect(isServiceAd("Car detailing kit, brand new")).toBe(false);
+  });
+});
+
 describe("platform fee pricing", () => {
   it("eBay price nets the same as the Reverb price after both platforms' cuts", async () => {
     const { ebayPriceMatchingReverbNet, REVERB_FEE_PCT, EBAY_FEE_PCT } = await import(

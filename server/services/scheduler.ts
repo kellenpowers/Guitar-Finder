@@ -10,6 +10,7 @@ import { runDiscovery, DISCOVERY_CRON } from "./discovery.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
 import { applySellerNames } from "./seller-names.js";
+import { isJunkListing } from "./listing-filter.js";
 import type { Scraper, ScraperOptions, ScrapedListing } from "../scrapers/base.js";
 
 const scrapers: Scraper[] = [
@@ -101,6 +102,8 @@ export async function runSearch(search: any): Promise<number> {
 
   for (const { source, listings } of bySource) {
     for (const listing of listings) {
+      // Service ads disguised as $0/$1 items never enter the pipeline
+      if (isJunkListing(listing.title, listing.price)) continue;
       const result = insertStmt.run(
         search.id, source, listing.externalId, listing.title, listing.description,
         listing.price, listing.imageUrl, listing.listingUrl, listing.location, listing.postedAt

@@ -77,6 +77,20 @@ export function initSchema(db: Database.Database): void {
 
   migrateSourceCheck(db);
   migrateValueSource(db);
+  purgeDollarServiceAds(db);
+}
+
+// One-time cleanup: free/$1 "listings" are service ads, never flippable items
+function purgeDollarServiceAds(db: Database.Database): void {
+  const done = db
+    .prepare("SELECT value FROM settings WHERE key = 'junk_ads_purged'")
+    .get();
+  if (done) return;
+  const result = db.prepare("DELETE FROM listings WHERE price <= 1").run();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('junk_ads_purged', '1')").run();
+  if (result.changes > 0) {
+    console.log(`Purged ${result.changes} free/$1 service-ad listings.`);
+  }
 }
 
 // Adds market_prices.value_source (which data backed the estimate) and
