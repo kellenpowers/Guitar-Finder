@@ -215,6 +215,12 @@ export default function Inventory() {
                         if (v != null && !(v > 0)) {
                           return alert("Enter a price above 0, or leave it blank.");
                         }
+                        // An empty field wipes the price — only ever on purpose
+                        // (iOS can report typed-but-unparseable input as empty)
+                        if (v == null && !confirm("Remove the target price from this item?")) {
+                          e.target.value = String(item.target_price ?? "");
+                          return;
+                        }
                         saveField(item, { target_price: v });
                       }}
                       className="w-20 border rounded px-1 py-0.5 text-sm text-gray-700"
