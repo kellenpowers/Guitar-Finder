@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import type { Scraper, ScrapedListing, ScraperOptions } from "./base.js";
-import { parseCardLines } from "./facebook.js";
+import { parseCardLines, cardImageUrl } from "./facebook.js";
 
 // OfferUp needs a real browser (JavaScript-rendered) but no login.
 // Results are localized by IP, which is the user's home connection.
@@ -65,8 +65,7 @@ export class OfferUpScraper implements Scraper {
           const parsed = parseCardLines(text.split("\n"));
           if (!parsed) continue;
 
-          const imgEl = await anchor.$("img");
-          const imageUrl = imgEl ? (await imgEl.getAttribute("src")) || "" : "";
+          const imageUrl = await cardImageUrl(anchor);
 
           byId.set(externalId, {
             externalId,

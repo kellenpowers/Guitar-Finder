@@ -99,6 +99,9 @@ export default function ListingCard({ listing }: ListingCardProps) {
   const [draftText, setDraftText] = useState("");
   const [copied, setCopied] = useState(false);
   const [followUp, setFollowUp] = useState(false);
+  // Facebook photo links are signed and expire after a few days — show the
+  // placeholder instead of a broken-image icon when that happens
+  const [imgFailed, setImgFailed] = useState(false);
 
   function openDraft(e: React.MouseEvent) {
     e.preventDefault();
@@ -187,10 +190,11 @@ export default function ListingCard({ listing }: ListingCardProps) {
         className="block bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md hover:ring-2 hover:ring-indigo-300 transition-all cursor-pointer"
       >
         <div className="flex">
-          {listing.image_url ? (
+          {listing.image_url && !imgFailed ? (
             <img
               src={listing.image_url}
               alt={listing.title}
+              onError={() => setImgFailed(true)}
               className="w-28 h-28 sm:w-44 sm:h-44 object-cover flex-shrink-0"
             />
           ) : (

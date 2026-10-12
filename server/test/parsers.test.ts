@@ -41,6 +41,21 @@ describe("parseCardLines (Facebook/OfferUp card text)", () => {
     expect(parseCardLines(["$500", "Canon AE-1 camera", "PENDING"])).toBeNull();
     expect(parseCardLines(["$500", "Sold out sign vintage", "Savannah, GA"])).not.toBeNull();
   });
+
+  it("never uses badge lines like 'Just listed' as the title", () => {
+    expect(parseCardLines(["Just listed", "$1,200", "Nintendo Switch OLED", "Savannah, GA"])).toEqual({
+      price: 1200,
+      title: "Nintendo Switch OLED",
+      location: "Savannah, GA",
+    });
+    expect(parseCardLines(["$80", "Just relisted", "Beige RCA cables"])?.title).toBe("Beige RCA cables");
+    expect(parseCardLines(["Free", "Old couch", "Pooler, GA"])?.price).toBe(0);
+    expect(parseCardLines(["Just listed", "$50"])).toBeNull();
+  });
+
+  it("takes only the current price when a price-drop card merges both", () => {
+    expect(parseCardLines(["$900$1,200", "Gibson Les Paul Studio"])?.price).toBe(900);
+  });
 });
 
 describe("parseEbayHtml", () => {
@@ -404,6 +419,17 @@ describe("isJunkListing (service-ad filter)", () => {
     expect(isServiceAd("Mesa Boogie service manual and footswitch")).toBe(false);
     expect(isServiceAd("Pioneer DJ controller DDJ-400")).toBe(false);
     expect(isServiceAd("Car detailing kit, brand new")).toBe(false);
+    expect(isServiceAd("Pressure washer 3000 PSI electric")).toBe(false);
+    expect(isServiceAd("Landscape oil painting, framed")).toBe(false);
+    expect(isServiceAd("Utility trailer, good for hauling")).toBe(false);
+  });
+
+  it("catches more service trades", async () => {
+    const { isServiceAd } = await import("../services/listing-filter.js");
+    expect(isServiceAd("Tree removal, best rates in Savannah")).toBe(true);
+    expect(isServiceAd("Roofing - roof repair and replacement")).toBe(true);
+    expect(isServiceAd("Gutter cleaning this week only")).toBe(true);
+    expect(isServiceAd("Appliance repair, same day service")).toBe(true);
   });
 });
 

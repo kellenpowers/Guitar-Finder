@@ -174,8 +174,7 @@ async function parseAnchors(
       const parsed = parseCardLines(text.split("\n"));
       if (!parsed) continue;
 
-      const imgEl = await anchor.$("img");
-      const imageUrl = imgEl ? (await imgEl.getAttribute("src")) || "" : "";
+      const imageUrl = await cardImageUrl(anchor);
 
       byId.set(externalId, {
         externalId,
@@ -195,8 +194,14 @@ async function parseAnchors(
   return [...byId.values()];
 }
 
-// Facebook card text renders as lines like ["$500", "Canon AE-1 camera", "Austin, TX"].
-// Exported for testing without a live Facebook page.
+// Facebook decorates cards with badge lines ("Just listed", "Free", "Price
+// drop") that are NOT the title — if we don't skip them, every result is
+// titled "Just listed" and valuations run against that garbage query.
+const BADGE_RE =
+  /^(just (re)?listed|price drop(ped)?|reduced|sponsored|popular|in high demand|free|new|only \d+ left)$/i;
+
+// Facebook card text renders as lines like ["Just listed", "$500",
+// "Canon AE-1 camera", "Austin, TX"]. Exported for testing without a live page.
 export function parseCardLines(
   lines: string[]
 ): { price: number; title: string; location: string } | null {
@@ -207,10 +212,15 @@ export function parseCardLines(
     return null;
   }
 
-  const priceLine = cleaned.find((l) => /^\$[\d,]+/.test(l));
-  const price = priceLine ? parseFloat(priceLine.replace(/[$,]/g, "")) || 0 : 0;
+  const usable = cleaned.filter((l) => !BADGE_RE.test(l));
 
-  const rest = cleaned.filter((l) => !/^\$[\d,]+/.test(l));
+  // Price-drop cards merge old and new price into one line ("$900$1,200") —
+  // take only the leading number (the current price).
+  const priceLine = usable.find((l) => /^\$[\d,]+/.test(l));
+  const priceText = priceLine?.match(/^\$([\d,]+(?:\.\d+)?)/)?.[1] || "";
+  const price = priceText ? parseFloat(priceText.replace(/,/g, "")) || 0 : 0;
+
+  const rest = usable.filter((l) => !/^\$[\d,]+/.test(l));
   const title = rest.find((l) => l.length > 3) || "";
   if (!title) return null;
 
@@ -218,6 +228,28 @@ export function parseCardLines(
   const location = afterTitle.find((l) => l.length > 2) || "";
 
   return { price, title, location };
+}
+
+// Pull the card photo out of an item anchor. Facebook lazy-loads images and
+// sometimes paints them as CSS backgrounds instead of <img> tags, so check
+// both — and never store data: placeholders as if they were photo URLs.
+export async function cardImageUrl(
+  anchor: import("playwright").ElementHandle<SVGElement | HTMLElement>
+): Promise<string> {
+  try {
+    return await anchor.evaluate((el) => {
+      const src = el.querySelector("img")?.getAttribute("src") || "";
+      if (/^https?:\/\//.test(src)) return src;
+      for (const node of Array.from(el.querySelectorAll("*"))) {
+        const bg = getComputedStyle(node).backgroundImage || "";
+        const m = bg.match(/url\("?(https?:[^")]+)"?\)/);
+        if (m) return m[1];
+      }
+      return "";
+    });
+  } catch {
+    return "";
+  }
 }
 
 // "Savannah, GA" -> "savannah"; "San Diego, CA" -> "sandiego"
