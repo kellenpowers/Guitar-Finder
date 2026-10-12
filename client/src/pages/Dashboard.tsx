@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ListingCard from "../components/ListingCard";
 import { api, isCloud, getSnapshotUpdatedAt } from "../api";
+import { meetsMarginTarget, BASE_MARGIN, SMALL_ITEM_MARGIN, MARGIN_BREAKPOINT } from "../lib/economics";
 
 function updatedAgo(): string | null {
   const ts = getSnapshotUpdatedAt();
@@ -13,13 +14,8 @@ function updatedAgo(): string | null {
   return `updated ${hours} hour${hours === 1 ? "" : "s"} ago`;
 }
 
-// ===== Tunables =====
-// A listing makes the Top Flips board when its Flip Score (0-100, combining
-// profit, ROI, sales velocity, and data confidence) clears this bar.
-const MIN_FLIP_SCORE = 50;
-// The By Trip view includes any profitable pickup, even below the score bar —
-// a marginal item is worth grabbing when you're driving there anyway.
-const TRIP_MIN_PROFIT = 20;
+// Qualification is the owner's margin doctrine (lib/economics.ts): 100% ROI
+// minimum, 200% under $100. Ranking stays by Flip Score (server order).
 // Sources you drive to (shipped sources are excluded from trips)
 const PICKUP_SOURCES = new Set(["facebook", "craigslist", "offerup"]);
 
@@ -35,7 +31,7 @@ function groupByTrip(listings: any[]): TripGroup[] {
   const groups = new Map<string, TripGroup>();
   for (const l of listings) {
     if (!PICKUP_SOURCES.has(l.source)) continue;
-    if (!l.location || (l.est_profit ?? 0) < TRIP_MIN_PROFIT) continue;
+    if (!l.location || !meetsMarginTarget(l)) continue;
     const key = l.location.trim().toLowerCase();
     const group: TripGroup = groups.get(key) || {
       location: l.location.trim(),
@@ -91,7 +87,7 @@ export default function Dashboard() {
     );
   }
 
-  const flips = allListings.filter((l) => (l.flip_score ?? -1) >= MIN_FLIP_SCORE);
+  const flips = allListings.filter(meetsMarginTarget);
   const valuedCount = allListings.filter((l) => l.estimated_market_value != null).length;
   const trips = groupByTrip(allListings);
 
@@ -104,8 +100,8 @@ export default function Dashboard() {
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             {view === "top"
-              ? `${allListings.length} listings found / ${valuedCount} valued / ${flips.length} flips scoring ${MIN_FLIP_SCORE}+`
-              : `${trips.length} towns with profitable pickups — one drive grabs them all`}
+              ? `${allListings.length} listings found / ${valuedCount} valued / ${flips.length} flips at ${BASE_MARGIN * 100}%+ margin (${SMALL_ITEM_MARGIN * 100}% under $${MARGIN_BREAKPOINT})`
+              : `${trips.length} towns with pickups meeting your margin — one drive grabs them all`}
             {isCloud && updatedAgo() && (
               <span className="text-gray-400"> · {updatedAgo()}</span>
             )}
@@ -146,7 +142,7 @@ export default function Dashboard() {
             ) : (
               <>
                 <p className="text-gray-500">
-                  Nothing scoring {MIN_FLIP_SCORE}+ as a flip yet.
+                  Nothing meeting your {BASE_MARGIN * 100}% margin target yet.
                 </p>
                 <p className="text-sm text-gray-400 mt-1">
                   Discovery keeps sweeping hourly. Browse everything on the{" "}

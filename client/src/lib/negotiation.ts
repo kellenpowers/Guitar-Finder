@@ -1,3 +1,5 @@
+import { maxBuyPrice } from "./economics";
+
 // Seller-message drafting per the owner's negotiation spec (Chris Voss, light):
 // STRUCTURE: greeting -> expectation-lowering line (verbatim) -> one genuine
 // label about the item (or a politely named flaw) -> one calibrated question
@@ -11,7 +13,6 @@
 // "Still interested." The counter ladder is PRIVATE and never enters the text.
 
 // ===== Negotiation tunables =====
-const MIN_PROFIT_FLOOR = 40; // walk-away still keeps at least this much profit
 const LOWBALL_FLOOR_RATIO = 0.35; // if our max is under this fraction of asking, the deal is dead
 const NO_VALUE_CAP_RATIO = 0.85; // max spend vs asking when no market value known
 const ACKERMAN_STEPS = [0.65, 0.85, 0.95]; // Voss ladder: shrinking raises to max
@@ -61,17 +62,15 @@ const r5 = (x: number) => Math.max(5, Math.round(x / 5) * 5);
 export function counterLadder(l: NegotiationListing): CounterLadder | null {
   if (!l.price || l.price <= 0) return null;
 
-  // Never pay more than keeps MIN_PROFIT_FLOOR after fees, shipping, and the
-  // drive; and never above asking. Without a market value, cap below asking.
+  // Never pay more than meets the owner's margin doctrine (100% ROI, 200%
+  // under $100) after fees, shipping, and the drive; never above asking.
+  // Without a market value, cap below asking.
   let cap = l.price;
   if (l.estimated_market_value && l.estimated_market_value > 0) {
     const drive = 2 * (l.distance_miles ?? 0) * DRIVE_COST_PER_MILE;
-    const profitCap =
-      l.estimated_market_value * (1 - RESALE_FEE_PCT) -
-      SHIPPING_EST -
-      drive -
-      MIN_PROFIT_FLOOR;
-    cap = Math.min(cap, profitCap);
+    const netProceeds =
+      l.estimated_market_value * (1 - RESALE_FEE_PCT) - SHIPPING_EST - drive;
+    cap = Math.min(cap, maxBuyPrice(netProceeds));
   } else {
     cap = cap * NO_VALUE_CAP_RATIO;
   }

@@ -5,6 +5,7 @@ import { estimateValue } from "./valuation.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
 import { applySellerNames } from "./seller-names.js";
+import { isServiceAd } from "./listing-filter.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
@@ -55,7 +56,10 @@ function getSetting(db: any, key: string): string {
 
 function worthValuing(l: ScrapedListing): boolean {
   return (
-    l.price >= PRICE_MIN && l.price <= PRICE_MAX && l.title.trim().length >= MIN_TITLE_LEN
+    l.price >= PRICE_MIN &&
+    l.price <= PRICE_MAX &&
+    l.title.trim().length >= MIN_TITLE_LEN &&
+    !isServiceAd(l.title)
   );
 }
 
