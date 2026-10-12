@@ -22,7 +22,7 @@ async function fetchEbayHtml(url: string): Promise<string> {
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
-async function getEbayAppToken(): Promise<string> {
+export async function getEbayAppToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
     return cachedToken.value;
   }

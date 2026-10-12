@@ -370,6 +370,24 @@ describe("computeFlipScore", () => {
   });
 });
 
+describe("eBay lister helpers", () => {
+  it("escapes XML and extracts platform ids", async () => {
+    const { xmlEscape, ebayItemIdFromUrl, reverbIdFromUrl, ebayAskPrice } = await import(
+      "../services/ebay-lister.js"
+    );
+    expect(xmlEscape(`Gibson "Les Paul" <1959> & co`)).toBe(
+      "Gibson &quot;Les Paul&quot; &lt;1959&gt; &amp; co"
+    );
+    expect(ebayItemIdFromUrl("https://www.ebay.com/itm/405012345678?x=1")).toBe("405012345678");
+    expect(reverbIdFromUrl("https://reverb.com/item/87654321-shure-sm7b")).toBe("87654321");
+    expect(ebayItemIdFromUrl(null)).toBe("");
+    // Reverb-linked items get fee-matched pricing; standalone get .99 of target
+    const { ebayPriceMatchingReverbNet } = await import("../services/fees.js");
+    expect(ebayAskPrice(500, true)).toBe(ebayPriceMatchingReverbNet(500));
+    expect(ebayAskPrice(500, false)).toBe(499.99);
+  });
+});
+
 describe("isJunkListing (service-ad filter)", () => {
   it("drops free/$1 ads and service phrases regardless of price", async () => {
     const { isJunkListing, isServiceAd } = await import("../services/listing-filter.js");

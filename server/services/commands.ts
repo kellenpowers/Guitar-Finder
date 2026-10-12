@@ -1,5 +1,6 @@
 import { createReverbDraft } from "./reverb-lister.js";
 import { importReverbListings } from "./reverb-importer.js";
+import { createEbayListing } from "./ebay-lister.js";
 
 // The phone queues listing commands in the cloud; the Mac (which holds all
 // API tokens in .env) polls here, executes them, and reports back.
@@ -13,6 +14,18 @@ function inventoryFnUrl(): string | null {
   const publishUrl = process.env.PUBLISH_URL;
   if (!publishUrl || !process.env.PUBLISH_KEY) return null;
   return publishUrl.replace(/\/publish\/?$/, "/inventory");
+}
+
+// Read the full cloud inventory as the Mac
+export async function fetchCloudInventory(): Promise<any[]> {
+  const url = inventoryFnUrl();
+  if (!url) return [];
+  const res = await fetch(url, {
+    headers: { "x-publish-key": process.env.PUBLISH_KEY! },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `cloud ${res.status}`);
+  return data.items || [];
 }
 
 export async function callCloud(body: Record<string, unknown>): Promise<any> {
@@ -41,6 +54,25 @@ async function runCommand(command: any): Promise<void> {
       id: command.id,
       status: "done",
       result: { ok: true, ...result },
+    });
+    return;
+  }
+
+  if (command.kind === "list_ebay") {
+    const result = await createEbayListing({
+      title: String(payload.title || ""),
+      targetPrice: payload.price ?? null,
+      description: String(payload.description || ""),
+      photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
+      reverbLinked: !!payload.reverb_linked,
+    });
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: result.ok ? "done" : "error",
+      result,
+      inventory_id: payload.inventory_id || null,
+      inventory_fields: result.ok ? { ebay_url: result.url, status: "listed" } : undefined,
     });
     return;
   }
