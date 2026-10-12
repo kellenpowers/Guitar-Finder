@@ -116,12 +116,26 @@ export async function queueListOnEbay(item: InventoryItem): Promise<void> {
 // Applied at copy time so any "Asking $X" line matches the CURRENT target
 // price — the copied text gets pasted places that don't show a price. (The
 // Reverb/eBay listers strip price talk anyway; those platforms show the price.)
+// The trailing guard skips ranges ("Asking $450-500") rather than garbling them.
+const ASKING_RE_SRC =
+  String.raw`(asking(?:\s+price)?(?:\s+is|:)?(?:\s+for)?\s*\$?\s*)[\d,]+(?:\.\d+)?(?![\d,]*\s*-\s*\d)`;
+
 export function syncAskingPrice(draft: string, price: number | null): string {
   if (!price || price <= 0) return draft;
-  return draft.replace(
-    /(asking(?:\s+price)?(?:\s+is|:)?(?:\s+for)?\s*\$?\s*)[\d,]+(?:\.\d+)?/gi,
-    (_m, lead) => `${lead}${Math.round(price)}`
-  );
+  if (new RegExp(ASKING_RE_SRC, "i").test(draft)) {
+    return draft.replace(
+      new RegExp(ASKING_RE_SRC, "gi"),
+      (_m, lead) => `${lead}${Math.round(price)}`
+    );
+  }
+  // The draft never had a price line (item was priced after creation) — add
+  // one where generateListingDraft would have put it
+  const lines = draft.split("\n");
+  const askLine = `Asking $${Math.round(price)} shipped.`;
+  const qIdx = lines.findIndex((l) => /^questions welcome\.?$/i.test(l.trim()));
+  if (qIdx >= 0) lines.splice(qIdx, 0, askLine);
+  else lines.push(askLine);
+  return lines.join("\n");
 }
 
 // Resale listing draft in the owner's voice: no em dashes, no stock filler,
