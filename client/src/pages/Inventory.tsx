@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
-  generateListingDraft, type InventoryItem,
+  generateListingDraft, queueListOnReverb, type InventoryItem,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -116,12 +116,20 @@ export default function Inventory() {
             Items you bought, photos, and the listing text to paste when you resell.
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
-        >
-          + Add Item
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => load()}
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+          >
+            + Add Item
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
@@ -220,7 +228,33 @@ export default function Inventory() {
                 }}
                 className="w-full border rounded p-2 text-sm mt-3 font-mono"
               />
-              <div className="flex justify-end mt-2">
+              <div className="flex items-center justify-end gap-2 mt-2 flex-wrap">
+                {item.reverb_url ? (
+                  <a
+                    href={item.reverb_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-orange-100 text-orange-800 text-sm rounded hover:bg-orange-200"
+                  >
+                    Reverb draft ✓ open &amp; publish
+                  </a>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (item.photos.length === 0 && !confirm("No photos yet — list on Reverb without photos?")) return;
+                      if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — send anyway?")) return;
+                      try {
+                        await queueListOnReverb(item);
+                        alert("Sent! The studio Mac will create the Reverb draft within a minute — a 'Reverb draft' link will appear here (tap Refresh).");
+                      } catch {
+                        alert("Couldn't queue it. Check your connection and try again.");
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-orange-500 text-white text-sm rounded hover:bg-orange-600"
+                  >
+                    List on Reverb
+                  </button>
+                )}
                 <button
                   onClick={async () => {
                     const ok = await copyText(item.listing_draft);

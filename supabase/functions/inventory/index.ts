@@ -1,13 +1,14 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Inventory CRUD + photo upload URLs for the Flip Finder app, gated by the
-// same passcode as the snapshot view.
-// Deployed copy embeds the real passcode (see supabase/functions/README.md).
+// Inventory CRUD + photo upload URLs + the command queue that lets the phone
+// ask the studio Mac to run listing actions (the Mac holds all API tokens).
+// Deployed copy embeds the real values (see supabase/functions/README.md).
 const VIEW_PASSCODE = "REPLACED_AT_DEPLOY";
+const PUBLISH_KEY = "REPLACED_AT_DEPLOY";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Headers": "content-type, x-publish-key",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -22,9 +23,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   const url = new URL(req.url);
-  if (url.searchParams.get("code") !== VIEW_PASSCODE) {
-    return json({ error: "bad passcode" }, 401);
-  }
+  const hasPasscode = url.searchParams.get("code") === VIEW_PASSCODE;
+  const hasMacKey = req.headers.get("x-publish-key") === PUBLISH_KEY;
+  if (!hasPasscode && !hasMacKey) return json({ error: "unauthorized" }, 401);
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -41,10 +42,10 @@ Deno.serve(async (req: Request) => {
   }
 
   if (req.method !== "POST") return json({ error: "method" }, 405);
-
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
 
+  // ----- Phone actions (passcode) -----
   if (action === "create") {
     const { data, error } = await supabase
       .from("inventory")
@@ -86,11 +87,68 @@ Deno.serve(async (req: Request) => {
   if (action === "uploadUrl") {
     const ext = String(body.ext || "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "jpg";
     const path = `inv/${crypto.randomUUID()}.${ext}`;
-    const { data, error } = await supabase.storage
-      .from("photos")
-      .createSignedUploadUrl(path);
+    const { data, error } = await supabase.storage.from("photos").createSignedUploadUrl(path);
     if (error) return json({ error: error.message }, 500);
     return json({ path, signedUrl: data.signedUrl, token: data.token });
+  }
+
+  if (action === "queue") {
+    const kind = String(body.kind || "");
+    if (!["list_reverb", "list_ebay"].includes(kind)) return json({ error: "unknown command" }, 400);
+    const { data, error } = await supabase
+      .from("commands")
+      .insert({ kind, payload: body.payload ?? {} })
+      .select()
+      .single();
+    if (error) return json({ error: error.message }, 500);
+    return json({ command: data });
+  }
+
+  if (action === "commandStatus") {
+    const { data, error } = await supabase
+      .from("commands")
+      .select("id, kind, status, result, created_at")
+      .eq("id", body.id)
+      .single();
+    if (error) return json({ error: error.message }, 500);
+    return json({ command: data });
+  }
+
+  // ----- Mac actions (publish key) -----
+  if (action === "take") {
+    if (!hasMacKey) return json({ error: "unauthorized" }, 401);
+    const { data, error } = await supabase
+      .from("commands")
+      .select("*")
+      .eq("status", "queued")
+      .order("created_at")
+      .limit(5);
+    if (error) return json({ error: error.message }, 500);
+    const ids = (data || []).map((c: any) => c.id);
+    if (ids.length > 0) {
+      await supabase.from("commands").update({ status: "running", updated_at: new Date().toISOString() }).in("id", ids);
+    }
+    return json({ commands: data || [] });
+  }
+
+  if (action === "complete") {
+    if (!hasMacKey) return json({ error: "unauthorized" }, 401);
+    const { error } = await supabase
+      .from("commands")
+      .update({ status: body.status === "done" ? "done" : "error", result: body.result ?? null, updated_at: new Date().toISOString() })
+      .eq("id", body.id);
+    if (error) return json({ error: error.message }, 500);
+    if (body.inventory_id && body.inventory_fields) {
+      const allowed: Record<string, unknown> = {};
+      for (const key of ["status", "reverb_url", "ebay_url"]) {
+        if (key in body.inventory_fields) allowed[key] = body.inventory_fields[key];
+      }
+      if (Object.keys(allowed).length > 0) {
+        allowed.updated_at = new Date().toISOString();
+        await supabase.from("inventory").update(allowed).eq("id", body.inventory_id);
+      }
+    }
+    return json({ ok: true });
   }
 
   return json({ error: "unknown action" }, 400);

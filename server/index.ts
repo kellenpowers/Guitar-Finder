@@ -21,6 +21,7 @@ import { runSearch } from "./services/scheduler.js";
 import { startScheduler } from "./services/scheduler.js";
 import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { ebayApiSelfTest } from "./scrapers/ebay.js";
+import { startCommandRunner } from "./services/commands.js";
 import { getDb } from "./db/index.js";
 
 // A stray error from a background scrape must never kill the whole app
@@ -133,6 +134,9 @@ const server = app.listen(PORT, () => {
 
   // Say immediately whether official eBay API access works
   ebayApiSelfTest().catch(() => {});
+
+  // Phone-queued listing commands (List on Reverb, etc.)
+  startCommandRunner();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

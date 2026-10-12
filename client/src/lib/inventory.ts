@@ -14,6 +14,8 @@ export interface InventoryItem {
   source_url: string | null;
   photos: string[];
   listing_draft: string;
+  reverb_url?: string | null;
+  ebay_url?: string | null;
   created_at: string;
 }
 
@@ -65,6 +67,22 @@ export async function uploadPhoto(file: File): Promise<string> {
   });
   if (!put.ok) throw new Error(`photo upload failed (${put.status})`);
   return path;
+}
+
+// Queue a listing command for the studio Mac (it holds the API tokens and
+// checks for commands every minute)
+export async function queueListOnReverb(item: InventoryItem): Promise<void> {
+  await call("POST", {
+    action: "queue",
+    kind: "list_reverb",
+    payload: {
+      inventory_id: item.id,
+      title: item.title,
+      price: item.target_price,
+      description: item.listing_draft,
+      photo_urls: item.photos.map(photoUrl),
+    },
+  });
 }
 
 export function photoUrl(path: string): string {
