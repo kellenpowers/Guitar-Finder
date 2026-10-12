@@ -98,6 +98,21 @@ export async function queueImportReverb(): Promise<void> {
   await call("POST", { action: "queue", kind: "import_reverb", payload: {} });
 }
 
+export async function queueListOnEbay(item: InventoryItem): Promise<void> {
+  await call("POST", {
+    action: "queue",
+    kind: "list_ebay",
+    payload: {
+      inventory_id: item.id,
+      title: item.title,
+      price: item.target_price,
+      description: item.listing_draft,
+      photo_urls: item.photos.map(photoUrl),
+      reverb_linked: !!item.reverb_url,
+    },
+  });
+}
+
 // Resale listing draft in the owner's voice: no em dashes, no stock filler,
 // honest and warm. The bracketed line is the one part he fills in.
 export function generateListingDraft(title: string, targetPrice?: number | null): string {

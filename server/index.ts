@@ -23,6 +23,7 @@ import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { ebayApiSelfTest } from "./scrapers/ebay.js";
 import { startCommandRunner } from "./services/commands.js";
 import { consentUrl, exchangeConsentCode, ebayConnection } from "./services/ebay-auth.js";
+import { startSoldSync } from "./services/sold-sync.js";
 import { getDb } from "./db/index.js";
 
 // A stray error from a background scrape must never kill the whole app
@@ -159,8 +160,11 @@ const server = app.listen(PORT, () => {
   // Say immediately whether official eBay API access works
   ebayApiSelfTest().catch(() => {});
 
-  // Phone-queued listing commands (List on Reverb, etc.)
+  // Phone-queued listing commands (List on Reverb/eBay, etc.)
   startCommandRunner();
+
+  // Don't-double-sell: watch both platforms, end the duplicate when one sells
+  startSoldSync();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

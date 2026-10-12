@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
-  generateListingDraft, queueListOnReverb, queueImportReverb, type InventoryItem,
+  generateListingDraft, queueListOnReverb, queueImportReverb, queueListOnEbay,
+  type InventoryItem,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -253,6 +254,34 @@ export default function Inventory() {
                 className="w-full border rounded p-2 text-sm mt-3 font-mono"
               />
               <div className="flex items-center justify-end gap-2 mt-2 flex-wrap">
+                {item.ebay_url ? (
+                  <a
+                    href={item.ebay_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-blue-100 text-blue-800 text-sm rounded hover:bg-blue-200"
+                  >
+                    eBay ✓ live
+                  </a>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (!item.target_price) return alert("Set a target price first.");
+                      if (item.photos.length === 0) return alert("eBay requires at least one photo — add photos first.");
+                      if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — publish anyway?")) return;
+                      if (!confirm(`This publishes a LIVE eBay listing (price auto-raised above $${item.target_price} to cover eBay's bigger fees). Continue?`)) return;
+                      try {
+                        await queueListOnEbay(item);
+                        alert("Sent! The studio Mac publishes it within a minute — an 'eBay live' link will appear here (tap Refresh).");
+                      } catch {
+                        alert("Couldn't queue it. Check your connection and try again.");
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                  >
+                    List on eBay
+                  </button>
+                )}
                 {item.reverb_url ? (
                   <a
                     href={item.reverb_url}
