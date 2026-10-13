@@ -82,6 +82,9 @@ export async function exchangeConsentCode(input: string): Promise<{ ok: boolean;
     "ebay_refresh_expires_at",
     String(Date.now() + (data.refresh_token_expires_in ?? 47304000) * 1000)
   );
+  // A reconnect may be a DIFFERENT eBay account — the old account's cached
+  // access token must not survive it
+  cachedUserToken = null;
   console.log("eBay account connected — seller actions are now available.");
   return { ok: true };
 }
