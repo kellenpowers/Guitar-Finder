@@ -403,6 +403,20 @@ describe("eBay lister helpers", () => {
   });
 });
 
+describe("eBay required item specifics", () => {
+  it("fills Brand, MPN, and Model from the title", async () => {
+    const { brandFromTitle, aspectValueFor } = await import("../services/ebay-lister.js");
+    expect(brandFromTitle("Atlas IED AP-S15HR Power Conditioner")).toBe("Atlas");
+    expect(brandFromTitle("Bose 301 Series V speakers")).toBe("Bose");
+    expect(brandFromTitle("  ")).toBe("Unbranded");
+    expect(aspectValueFor("Brand", "Bose 301 speakers")).toBe("Bose");
+    expect(aspectValueFor("MPN", "Bose 301 speakers")).toBe("Does Not Apply");
+    expect(aspectValueFor("Model", "Bose 301 Series V speakers")).toBe("301 Series V speakers");
+    expect(aspectValueFor("Model", "Bose")).toBe("See Description");
+    expect(aspectValueFor("Type", "Bose 301 speakers")).toBe("See Description");
+  });
+});
+
 describe("isJunkListing (service-ad filter)", () => {
   it("drops free/$1 ads and service phrases regardless of price", async () => {
     const { isJunkListing, isServiceAd } = await import("../services/listing-filter.js");

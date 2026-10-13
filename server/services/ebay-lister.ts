@@ -39,6 +39,48 @@ export function ebayAskPrice(targetPrice: number, reverbLinked: boolean): number
   return Math.ceil(targetPrice) - 0.01;
 }
 
+// eBay rejects listings missing required "item specifics" (Brand almost
+// everywhere) — fill the required ones from the title so a tap can't fail on
+// a missing field. Free-text aspects accept these; if a category ever demands
+// a closed-list value we can't infer, the error now surfaces on the phone.
+const MPN_FALLBACK = "Does Not Apply";
+const ASPECT_FALLBACK = "See Description";
+
+export function brandFromTitle(title: string): string {
+  return title.trim().split(/\s+/)[0] || "Unbranded";
+}
+
+export function aspectValueFor(name: string, title: string): string {
+  const key = name.trim().toLowerCase();
+  if (key === "brand") return brandFromTitle(title);
+  if (key === "mpn") return MPN_FALLBACK;
+  if (key === "model") {
+    return title.trim().split(/\s+/).slice(1).join(" ").slice(0, 65) || ASPECT_FALLBACK;
+  }
+  return ASPECT_FALLBACK;
+}
+
+async function requiredAspects(categoryId: string): Promise<string[]> {
+  try {
+    const token = await getEbayAppToken();
+    const res = await fetch(
+      `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category?category_id=${encodeURIComponent(categoryId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) throw new Error(`aspects ${res.status}`);
+    const data = await res.json();
+    const names: string[] = (data?.aspects || [])
+      .filter((a: any) => a?.aspectConstraint?.aspectRequired)
+      .map((a: any) => String(a?.localizedAspectName || ""))
+      .filter(Boolean);
+    if (!names.some((n) => n.toLowerCase() === "brand")) names.push("Brand");
+    return names;
+  } catch (err) {
+    console.warn("eBay aspect lookup failed (defaulting to Brand):", err instanceof Error ? err.message : err);
+    return ["Brand"];
+  }
+}
+
 async function suggestCategoryId(title: string): Promise<string> {
   try {
     const token = await getEbayAppToken();
@@ -106,6 +148,12 @@ export async function createEbayListing(
 
   const price = ebayAskPrice(req.targetPrice, req.reverbLinked);
   const categoryId = await suggestCategoryId(req.title);
+  const itemSpecifics = (await requiredAspects(categoryId))
+    .map(
+      (n) =>
+        `<NameValueList><Name>${xmlEscape(n)}</Name><Value>${xmlEscape(aspectValueFor(n, req.title))}</Value></NameValueList>`
+    )
+    .join("");
   // The eBay price is raised above the target to cover fees, so any price
   // written into the description text would contradict the listing — strip it
   const description = removePriceTalk(req.description) || req.title;
@@ -121,6 +169,7 @@ export async function createEbayListing(
     <PrimaryCategory><CategoryID>${categoryId}</CategoryID></PrimaryCategory>
     <StartPrice>${price.toFixed(2)}</StartPrice>
     <ConditionID>${CONDITION_ID}</ConditionID>
+    <ItemSpecifics>${itemSpecifics}</ItemSpecifics>
     <Country>US</Country>
     <Currency>USD</Currency>
     <DispatchTimeMax>${DISPATCH_DAYS}</DispatchTimeMax>
