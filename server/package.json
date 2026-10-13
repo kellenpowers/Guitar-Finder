@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "better-sqlite3": "^11.7.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",

@@ -1,6 +1,7 @@
 import { createReverbDraft } from "./reverb-lister.js";
 import { importReverbListings } from "./reverb-importer.js";
 import { createEbayListing } from "./ebay-lister.js";
+import { identifyItem } from "./identify.js";
 
 // The phone queues listing commands in the cloud; the Mac (which holds all
 // API tokens in .env) polls here, executes them, and reports back.
@@ -79,6 +80,20 @@ async function withFreshFields(payload: any): Promise<any> {
 
 async function runCommand(command: any): Promise<void> {
   const payload = command.payload || {};
+
+  if (command.kind === "identify_item") {
+    const result = await identifyItem({
+      probeUrl: String(payload.probe_url || ""),
+      photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
+    });
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: result.ok ? "done" : "error",
+      result,
+    });
+    return;
+  }
 
   if (command.kind === "import_reverb") {
     const result = await importReverbListings();
