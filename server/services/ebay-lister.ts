@@ -160,6 +160,20 @@ export async function createEbayListing(
   return { ok: false, error: `eBay: ${error.slice(0, 300)}` };
 }
 
+// Which eBay USER account the stored consent belongs to — listings post there.
+// (The developer account only owns the app keys; it is not where listings go.)
+export async function ebayWhoAmI(): Promise<{ username: string; feedbackScore: number | null } | null> {
+  try {
+    const response = await tradingCall("GetUser", "");
+    const username = response.match(/<UserID>([^<]*)<\/UserID>/)?.[1] || "";
+    if (!username) return null;
+    const fb = response.match(/<FeedbackScore>(\d+)<\/FeedbackScore>/)?.[1];
+    return { username, feedbackScore: fb ? Number(fb) : null };
+  } catch {
+    return null;
+  }
+}
+
 export async function endEbayListing(itemId: string): Promise<{ ok: boolean; error?: string }> {
   const inner = `<ItemID>${xmlEscape(itemId)}</ItemID>
   <EndingReason>NotAvailable</EndingReason>`;

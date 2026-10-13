@@ -23,6 +23,7 @@ import { runDiscovery, isDiscoveryRunning } from "./services/discovery.js";
 import { ebayApiSelfTest } from "./scrapers/ebay.js";
 import { startCommandRunner } from "./services/commands.js";
 import { consentUrl, exchangeConsentCode, ebayConnection } from "./services/ebay-auth.js";
+import { ebayWhoAmI } from "./services/ebay-lister.js";
 import { startSoldSync } from "./services/sold-sync.js";
 import { getDb } from "./db/index.js";
 
@@ -102,16 +103,33 @@ app.get("/api/ebay/consent-url", (_req, res) => {
   res.json({ url });
 });
 
+// Listings post to whichever eBay USER account granted the consent — show
+// that account by name so a wrong sign-in can't hide
+let ebayUserCache: { user: { username: string; feedbackScore: number | null }; at: number } | null = null;
+
 app.post("/api/ebay/connect", async (req, res) => {
   const input = String(req.body?.code || "");
   if (!input.trim()) return res.status(400).json({ error: "Paste the code or the full URL." });
   const result = await exchangeConsentCode(input);
   if (!result.ok) return res.status(400).json(result);
-  res.json({ ok: true });
+  ebayUserCache = null; // may be a different account now
+  const user = await ebayWhoAmI();
+  if (user) ebayUserCache = { user, at: Date.now() };
+  res.json({ ok: true, user });
 });
 
-app.get("/api/ebay/status", (_req, res) => {
-  res.json(ebayConnection());
+app.get("/api/ebay/status", async (_req, res) => {
+  const conn = ebayConnection();
+  let user = null;
+  if (conn.connected) {
+    if (ebayUserCache && Date.now() - ebayUserCache.at < 10 * 60_000) {
+      user = ebayUserCache.user;
+    } else {
+      user = await ebayWhoAmI();
+      if (user) ebayUserCache = { user, at: Date.now() };
+    }
+  }
+  res.json({ ...conn, user });
 });
 
 // Kick off a discovery sweep now (runs in the background; results appear as found)
@@ -159,6 +177,15 @@ const server = app.listen(PORT, () => {
 
   // Say immediately whether official eBay API access works
   ebayApiSelfTest().catch(() => {});
+
+  // ...and WHICH eBay account listings will post to
+  if (ebayConnection().connected) {
+    ebayWhoAmI()
+      .then((u) => {
+        if (u) console.log(`eBay is connected as "${u.username}" — listings post to that account.`);
+      })
+      .catch(() => {});
+  }
 
   // Phone-queued listing commands (List on Reverb/eBay, etc.)
   startCommandRunner();

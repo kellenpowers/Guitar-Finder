@@ -28,12 +28,17 @@ function SearchConfigInner() {
   const [fbLoginStatus, setFbLoginStatus] = useState<"idle" | "pending">("idle");
   const [backfilling, setBackfilling] = useState(false);
   const [ebayConnected, setEbayConnected] = useState<boolean | null>(null);
+  const [ebayUser, setEbayUser] = useState<{ username: string; feedbackScore: number | null } | null>(null);
   const [ebayCode, setEbayCode] = useState("");
+  const [ebaySwitching, setEbaySwitching] = useState(false);
 
   useEffect(() => {
     api("/api/ebay/status")
       .then((r) => r.json())
-      .then((d) => setEbayConnected(!!d.connected))
+      .then((d) => {
+        setEbayConnected(!!d.connected);
+        setEbayUser(d.user || null);
+      })
       .catch(() => setEbayConnected(null));
   }, []);
 
@@ -58,8 +63,14 @@ function SearchConfigInner() {
       const data = await res.json();
       if (res.ok) {
         setEbayConnected(true);
+        setEbayUser(data.user || null);
+        setEbaySwitching(false);
         setEbayCode("");
-        alert("eBay connected! Listing to eBay is now unlocked.");
+        alert(
+          data.user
+            ? `eBay connected as "${data.user.username}" — every listing posts to that account. If that's not your selling account, tap Switch eBay account.`
+            : "eBay connected! Listing to eBay is now unlocked."
+        );
       } else {
         alert(data.error || "That code didn't work — codes expire in ~5 minutes, try the Connect button again.");
       }
@@ -252,21 +263,42 @@ function SearchConfigInner() {
           <div>
             <h2 className="font-semibold">eBay account</h2>
             <p className="text-sm text-gray-500">
-              {ebayConnected === true
-                ? "Connected — listing to eBay is unlocked."
-                : "Connect once so the app can create your eBay listings."}
+              {ebayConnected === true ? (
+                ebayUser ? (
+                  <>
+                    Connected as <span className="font-semibold text-gray-700">{ebayUser.username}</span>
+                    {ebayUser.feedbackScore != null && <> ({ebayUser.feedbackScore} feedback)</>}
+                    {" — every eBay listing posts to this account."}
+                  </>
+                ) : (
+                  "Connected — listing to eBay is unlocked."
+                )
+              ) : (
+                "Connect once so the app can create your eBay listings."
+              )}
             </p>
           </div>
-          {ebayConnected !== true && (
-            <button
-              onClick={handleEbayConsent}
-              className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-            >
-              Connect eBay (opens sign-in)
-            </button>
-          )}
+          <button
+            onClick={() => {
+              if (ebayConnected === true) setEbaySwitching(true);
+              handleEbayConsent();
+            }}
+            className={`px-3 py-1.5 text-sm rounded ${
+              ebayConnected === true
+                ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
+          >
+            {ebayConnected === true ? "Switch eBay account" : "Connect eBay (opens sign-in)"}
+          </button>
         </div>
-        {ebayConnected !== true && (
+        {ebayConnected === true && (
+          <p className="text-xs text-gray-400 mt-2">
+            Not the account you sell from? Tap Switch, and in the sign-in window that opens
+            use "Sign out" or "Switch account" first so you can sign in with the right one.
+          </p>
+        )}
+        {(ebayConnected !== true || ebaySwitching) && (
           <div className="flex gap-2 mt-3">
             <input
               type="text"
