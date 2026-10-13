@@ -71,9 +71,10 @@ export async function uploadPhoto(file: File): Promise<string> {
 }
 
 // Queue a listing command for the studio Mac (it holds the API tokens and
-// checks for commands every minute)
-export async function queueListOnReverb(item: InventoryItem): Promise<void> {
-  await call("POST", {
+// checks for commands every minute). Returns the command id so the phone can
+// poll for the outcome.
+export async function queueListOnReverb(item: InventoryItem): Promise<string> {
+  const data = await call("POST", {
     action: "queue",
     kind: "list_reverb",
     payload: {
@@ -85,6 +86,31 @@ export async function queueListOnReverb(item: InventoryItem): Promise<void> {
       video_url: item.video_url || null,
     },
   });
+  return data.command?.id || "";
+}
+
+// Poll a queued command until the Mac reports back. Returns null if nothing
+// happened before the timeout (Mac off or asleep) — queued, not failed.
+export async function waitForCommand(
+  id: string,
+  { timeoutMs = 180_000, intervalMs = 5_000 } = {}
+): Promise<{ status: "done" | "error"; error?: string } | null> {
+  if (!id) return null;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    try {
+      const data = await call("POST", { action: "commandStatus", id });
+      const c = data.command;
+      if (c?.status === "done") return { status: "done" };
+      if (c?.status === "error") {
+        return { status: "error", error: c?.result?.error || "unknown error" };
+      }
+    } catch {
+      // transient network blip — keep polling until the deadline
+    }
+  }
+  return null;
 }
 
 export function photoUrl(path: string): string {
@@ -98,8 +124,8 @@ export async function queueImportReverb(): Promise<void> {
   await call("POST", { action: "queue", kind: "import_reverb", payload: {} });
 }
 
-export async function queueListOnEbay(item: InventoryItem): Promise<void> {
-  await call("POST", {
+export async function queueListOnEbay(item: InventoryItem): Promise<string> {
+  const data = await call("POST", {
     action: "queue",
     kind: "list_ebay",
     payload: {
@@ -111,6 +137,7 @@ export async function queueListOnEbay(item: InventoryItem): Promise<void> {
       reverb_linked: !!item.reverb_url,
     },
   });
+  return data.command?.id || "";
 }
 
 // Applied at copy time so any "Asking $X" line matches the CURRENT target

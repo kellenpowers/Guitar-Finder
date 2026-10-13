@@ -3,7 +3,7 @@ import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
   generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
-  queueListOnEbay, type InventoryItem,
+  queueListOnEbay, waitForCommand, type InventoryItem,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -306,8 +306,17 @@ export default function Inventory() {
                       if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — publish anyway?")) return;
                       if (!confirm(`This publishes a LIVE eBay listing (price auto-raised above $${item.target_price} to cover eBay's bigger fees). Continue?`)) return;
                       try {
-                        await queueListOnEbay(item);
-                        alert("Sent! The studio Mac publishes it within a minute — an 'eBay live' link will appear here (tap Refresh).");
+                        const cmdId = await queueListOnEbay(item);
+                        alert("Sent! The studio Mac is publishing it now — keep this page open, the result pops up here in a minute.");
+                        const outcome = await waitForCommand(cmdId);
+                        if (outcome === null) {
+                          alert("The Mac hasn't finished it yet — is it on and running Flip Finder? The listing happens as soon as it catches up; tap Refresh later.");
+                        } else if (outcome.status === "done") {
+                          await load();
+                          alert("eBay listing is LIVE — the eBay link is on the item now.");
+                        } else {
+                          alert(`eBay rejected the listing:\n\n${outcome.error}\n\nFix what it names (or tell Claude) and tap List on eBay again.`);
+                        }
                       } catch {
                         alert("Couldn't queue it. Check your connection and try again.");
                       }
@@ -332,8 +341,17 @@ export default function Inventory() {
                       if (item.photos.length === 0 && !confirm("No photos yet — list on Reverb without photos?")) return;
                       if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — send anyway?")) return;
                       try {
-                        await queueListOnReverb(item);
-                        alert("Sent! The studio Mac will create the Reverb draft within a minute — a 'Reverb draft' link will appear here (tap Refresh).");
+                        const cmdId = await queueListOnReverb(item);
+                        alert("Sent! The studio Mac is creating the Reverb draft — keep this page open, the result pops up here in a minute.");
+                        const outcome = await waitForCommand(cmdId);
+                        if (outcome === null) {
+                          alert("The Mac hasn't finished it yet — is it on and running Flip Finder? The draft is created as soon as it catches up; tap Refresh later.");
+                        } else if (outcome.status === "done") {
+                          await load();
+                          alert("Reverb draft created — open it from the item to review and publish.");
+                        } else {
+                          alert(`Reverb rejected it:\n\n${outcome.error}\n\nFix what it names (or tell Claude) and try again.`);
+                        }
                       } catch {
                         alert("Couldn't queue it. Check your connection and try again.");
                       }
