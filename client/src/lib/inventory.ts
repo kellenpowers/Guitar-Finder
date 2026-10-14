@@ -58,8 +58,9 @@ export async function deleteItem(id: string): Promise<void> {
   await call("POST", { action: "delete", id });
 }
 
-export async function uploadPhoto(file: File): Promise<string> {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+export async function uploadPhoto(file: File | Blob, extOverride?: string): Promise<string> {
+  const name = file instanceof File ? file.name : "";
+  const ext = (extOverride || name.split(".").pop() || "jpg").toLowerCase();
   const { signedUrl, path } = await call("POST", { action: "uploadUrl", ext });
   const put = await fetch(signedUrl, {
     method: "PUT",
@@ -68,6 +69,56 @@ export async function uploadPhoto(file: File): Promise<string> {
   });
   if (!put.ok) throw new Error(`photo upload failed (${put.status})`);
   return path;
+}
+
+// Small JPEG copy of a photo for eBay's image search (full photos stay full-res)
+export async function downscaleImage(file: File, maxDim = 1024): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("image load failed"));
+      el.src = url;
+    });
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no canvas");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.8));
+    if (!blob) throw new Error("downscale failed");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export interface IdentifyResult {
+  ok: boolean;
+  title?: string;
+  source?: string;
+  candidates?: string[];
+  description?: string;
+  condition_notes?: string;
+  questions?: string[];
+  suggested_target?: number;
+  error?: string;
+}
+
+// Ask the Mac to work out what the item in these photos is
+export async function queueIdentifyItem(probePaths: string[], photoPaths: string[]): Promise<string> {
+  const data = await call("POST", {
+    action: "queue",
+    kind: "identify_item",
+    payload: {
+      probe_urls: probePaths.map(photoUrl),
+      photo_urls: photoPaths.map(photoUrl),
+    },
+  });
+  return data.command?.id || "";
 }
 
 // Queue a listing command for the studio Mac (it holds the API tokens and
@@ -94,7 +145,7 @@ export async function queueListOnReverb(item: InventoryItem): Promise<string> {
 export async function waitForCommand(
   id: string,
   { timeoutMs = 180_000, intervalMs = 5_000 } = {}
-): Promise<{ status: "done" | "error"; error?: string } | null> {
+): Promise<{ status: "done" | "error"; error?: string; result?: any } | null> {
   if (!id) return null;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -102,9 +153,9 @@ export async function waitForCommand(
     try {
       const data = await call("POST", { action: "commandStatus", id });
       const c = data.command;
-      if (c?.status === "done") return { status: "done" };
+      if (c?.status === "done") return { status: "done", result: c?.result };
       if (c?.status === "error") {
-        return { status: "error", error: c?.result?.error || "unknown error" };
+        return { status: "error", error: c?.result?.error || "unknown error", result: c?.result };
       }
     } catch {
       // transient network blip — keep polling until the deadline

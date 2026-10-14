@@ -3,7 +3,8 @@ import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
   generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
-  queueListOnEbay, waitForCommand, type InventoryItem,
+  queueListOnEbay, waitForCommand, downscaleImage, queueIdentifyItem,
+  type InventoryItem, type IdentifyResult,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
 
@@ -18,6 +19,12 @@ export default function Inventory() {
   const [newTitle, setNewTitle] = useState("");
   const [newBought, setNewBought] = useState("");
   const [newTarget, setNewTarget] = useState("");
+  const [newPhotos, setNewPhotos] = useState<string[]>([]);
+  const [probePaths, setProbePaths] = useState<string[]>([]);
+  const [newUploading, setNewUploading] = useState(false);
+  const [identifying, setIdentifying] = useState(false);
+  const [idResult, setIdResult] = useState<IdentifyResult | null>(null);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function load() {
@@ -71,18 +78,97 @@ export default function Inventory() {
     );
   }
 
+  async function handleNewPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setNewUploading(true);
+    try {
+      const paths = [...newPhotos];
+      const probes = [...probePaths];
+      for (const file of Array.from(files)) {
+        paths.push(await uploadPhoto(file));
+        // Small JPEG copies of the first few photos — eBay's image search and
+        // Claude both read these (originals can be HEIC or huge)
+        if (probes.length < 3) {
+          const probe = await downscaleImage(file).catch(() => null);
+          if (probe) probes.push(await uploadPhoto(probe, "jpg"));
+        }
+      }
+      setNewPhotos(paths);
+      setProbePaths(probes);
+    } catch {
+      alert("A photo failed to upload. Try again.");
+    }
+    setNewUploading(false);
+  }
+
+  async function handleIdentify() {
+    if (newPhotos.length === 0) return;
+    setIdentifying(true);
+    try {
+      const cmdId = await queueIdentifyItem(probePaths, newPhotos);
+      const outcome = await waitForCommand(cmdId, { timeoutMs: 240_000 });
+      if (!outcome) {
+        alert("The Mac hasn't answered yet — is it on and running Flip Finder? You can type the title yourself meanwhile.");
+      } else {
+        const r = (outcome.result || {}) as IdentifyResult;
+        setIdResult(r);
+        setAnswers({});
+        if (r.title) {
+          setNewTitle(r.title);
+          if (r.suggested_target && !newTarget) setNewTarget(String(r.suggested_target));
+        } else {
+          alert(r.error || "Couldn't identify it — type the title yourself.");
+        }
+      }
+    } catch (err) {
+      alert(
+        err instanceof Error && err.message.includes("unknown command")
+          ? "Identify isn't switched on in the cloud yet — tell Claude to finish the cloud update. You can type the title yourself meanwhile."
+          : "Couldn't reach the cloud. Check your connection."
+      );
+    }
+    setIdentifying(false);
+  }
+
+  function buildNewDraft(title: string, target: number | null): string {
+    const answered = (idResult?.questions || [])
+      .map((q, i) => (answers[i] || "").trim())
+      .filter(Boolean);
+    if (!idResult?.description) {
+      const base = generateListingDraft(title, target);
+      return answered.length ? `${base}\n${answered.join("\n")}` : base;
+    }
+    const lines = [title, "", idResult.description];
+    if (idResult.condition_notes) lines.push(idResult.condition_notes);
+    lines.push(...answered);
+    lines.push("Questions welcome.");
+    return lines.join("\n");
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
+    const title = newTitle.trim();
     const target = newTarget ? Number(newTarget) : null;
     const item = await createItem({
-      title: newTitle.trim(),
+      title,
       bought_price: newBought ? Number(newBought) : null,
       target_price: target,
-      listing_draft: generateListingDraft(newTitle.trim(), target),
+      listing_draft: buildNewDraft(title, target),
     }).catch(() => null);
     if (!item) return alert("Couldn't add the item. Try again.");
-    setItems((prev) => [item, ...(prev || [])]);
-    setNewTitle(""); setNewBought(""); setNewTarget(""); setShowAdd(false);
+    let withPhotos = item;
+    if (newPhotos.length > 0) {
+      const updated = await updateItem(item.id, { photos: newPhotos }).catch(() => null);
+      if (updated) {
+        withPhotos = updated;
+      } else {
+        alert("Item added, but attaching the photos failed — open it and add them again.");
+      }
+    }
+    setItems((prev) => [withPhotos, ...(prev || [])]);
+    setNewTitle(""); setNewBought(""); setNewTarget("");
+    setNewPhotos([]); setProbePaths([]); setIdResult(null); setAnswers({});
+    setShowAdd(false);
   }
 
   async function handlePhotos(item: InventoryItem, files: FileList | null) {
@@ -156,11 +242,60 @@ export default function Inventory() {
 
       {showAdd && (
         <form onSubmit={handleAdd} className="bg-white rounded-lg border p-4 mb-4 space-y-3">
+          <p className="text-sm text-gray-500">
+            Add photos first — the app works out what it is and fills the fields.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {newPhotos.map((p) => (
+              <img key={p} src={photoUrl(p)} alt="" className="w-16 h-16 object-cover rounded border" />
+            ))}
+            <label className="w-16 h-16 border-2 border-dashed rounded flex items-center justify-center text-xs text-gray-400 cursor-pointer hover:border-indigo-400 hover:text-indigo-500 text-center">
+              {newUploading ? "..." : "+ Photos"}
+              <input
+                type="file" accept="image/*" multiple className="hidden"
+                onChange={(e) => handleNewPhotos(e.target.files)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleIdentify}
+              disabled={newPhotos.length === 0 || newUploading || identifying}
+              className="px-3 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {identifying ? "Identifying (takes a minute)..." : "Identify from photos"}
+            </button>
+          </div>
+          {idResult?.candidates && idResult.candidates.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {idResult.candidates.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewTitle(c)}
+                  className={`text-xs px-2 py-1 rounded border ${
+                    newTitle === c ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
           <input
             type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
             placeholder="What is it? e.g. Shure SM7B microphone" required
             className="w-full border rounded p-2 text-sm"
           />
+          {(idResult?.questions || []).map((q, i) => (
+            <input
+              key={q}
+              type="text"
+              value={answers[i] || ""}
+              onChange={(e) => setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+              placeholder={`${q} (answer goes in the listing)`}
+              className="w-full border rounded p-2 text-sm"
+            />
+          ))}
           <div className="flex gap-3">
             <input
               type="number" value={newBought} onChange={(e) => setNewBought(e.target.value)}
