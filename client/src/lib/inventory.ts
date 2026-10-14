@@ -109,12 +109,12 @@ export interface IdentifyResult {
 }
 
 // Ask the Mac to work out what the item in these photos is
-export async function queueIdentifyItem(probePath: string, photoPaths: string[]): Promise<string> {
+export async function queueIdentifyItem(probePaths: string[], photoPaths: string[]): Promise<string> {
   const data = await call("POST", {
     action: "queue",
     kind: "identify_item",
     payload: {
-      probe_url: photoUrl(probePath),
+      probe_urls: probePaths.map(photoUrl),
       photo_urls: photoPaths.map(photoUrl),
     },
   });

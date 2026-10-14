@@ -20,7 +20,7 @@ export default function Inventory() {
   const [newBought, setNewBought] = useState("");
   const [newTarget, setNewTarget] = useState("");
   const [newPhotos, setNewPhotos] = useState<string[]>([]);
-  const [probePath, setProbePath] = useState("");
+  const [probePaths, setProbePaths] = useState<string[]>([]);
   const [newUploading, setNewUploading] = useState(false);
   const [identifying, setIdentifying] = useState(false);
   const [idResult, setIdResult] = useState<IdentifyResult | null>(null);
@@ -83,15 +83,18 @@ export default function Inventory() {
     setNewUploading(true);
     try {
       const paths = [...newPhotos];
+      const probes = [...probePaths];
       for (const file of Array.from(files)) {
         paths.push(await uploadPhoto(file));
+        // Small JPEG copies of the first few photos — eBay's image search and
+        // Claude both read these (originals can be HEIC or huge)
+        if (probes.length < 3) {
+          const probe = await downscaleImage(file).catch(() => null);
+          if (probe) probes.push(await uploadPhoto(probe, "jpg"));
+        }
       }
       setNewPhotos(paths);
-      // Small probe copy of the first photo, for eBay's image search
-      if (!probePath) {
-        const probe = await downscaleImage(files[0]).catch(() => null);
-        if (probe) setProbePath(await uploadPhoto(probe, "jpg"));
-      }
+      setProbePaths(probes);
     } catch {
       alert("A photo failed to upload. Try again.");
     }
@@ -102,8 +105,8 @@ export default function Inventory() {
     if (newPhotos.length === 0) return;
     setIdentifying(true);
     try {
-      const cmdId = await queueIdentifyItem(probePath || newPhotos[0], newPhotos);
-      const outcome = await waitForCommand(cmdId, { timeoutMs: 150_000 });
+      const cmdId = await queueIdentifyItem(probePaths, newPhotos);
+      const outcome = await waitForCommand(cmdId, { timeoutMs: 240_000 });
       if (!outcome) {
         alert("The Mac hasn't answered yet — is it on and running Flip Finder? You can type the title yourself meanwhile.");
       } else {
@@ -155,11 +158,16 @@ export default function Inventory() {
     if (!item) return alert("Couldn't add the item. Try again.");
     let withPhotos = item;
     if (newPhotos.length > 0) {
-      withPhotos = (await updateItem(item.id, { photos: newPhotos }).catch(() => null)) || item;
+      const updated = await updateItem(item.id, { photos: newPhotos }).catch(() => null);
+      if (updated) {
+        withPhotos = updated;
+      } else {
+        alert("Item added, but attaching the photos failed — open it and add them again.");
+      }
     }
     setItems((prev) => [withPhotos, ...(prev || [])]);
     setNewTitle(""); setNewBought(""); setNewTarget("");
-    setNewPhotos([]); setProbePath(""); setIdResult(null); setAnswers({});
+    setNewPhotos([]); setProbePaths([]); setIdResult(null); setAnswers({});
     setShowAdd(false);
   }
 

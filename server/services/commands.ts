@@ -83,7 +83,7 @@ async function runCommand(command: any): Promise<void> {
 
   if (command.kind === "identify_item") {
     const result = await identifyItem({
-      probeUrl: String(payload.probe_url || ""),
+      probeUrls: Array.isArray(payload.probe_urls) ? payload.probe_urls : [],
       photoUrls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [],
     });
     await callCloud({
