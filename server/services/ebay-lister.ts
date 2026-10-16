@@ -121,9 +121,18 @@ async function tradingCall(callName: string, innerXml: string): Promise<string> 
   return res.text();
 }
 
+function xmlUnescape(s: string): string {
+  return s
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
 function tradingErrors(responseXml: string): string {
   const messages = [...responseXml.matchAll(/<LongMessage>([^<]*)<\/LongMessage>/g)]
-    .map((m) => m[1])
+    .map((m) => xmlUnescape(m[1]))
     .join(" | ");
   return messages || "unknown Trading API error";
 }
