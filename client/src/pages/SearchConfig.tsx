@@ -1,21 +1,218 @@
 import { useEffect, useState } from "react";
 import SearchForm from "../components/SearchForm";
-import { api, isCloud } from "../api";
+import { api, isCloud, loadSnapshot } from "../api";
+import { queueManageSearch, waitForCommand } from "../lib/inventory";
 
 export default function SearchConfig() {
-  if (isCloud) {
-    return (
-      <div className="text-center py-12 bg-white rounded-lg border">
-        <p className="text-gray-700 font-medium">This is the read-only cloud view.</p>
-        <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
-          Searches, discovery sweeps, Facebook login, and value re-checks run on
-          the studio computer. It publishes fresh findings here automatically
-          after every sweep.
-        </p>
-      </div>
-    );
-  }
+  if (isCloud) return <CloudSearches />;
   return <SearchConfigInner />;
+}
+
+// ===== Cloud search defaults =====
+const CLOUD_DEFAULT_LOCATION = "Savannah, GA"; // prefilled location for new searches made from the phone
+
+// Phone-side search management: changes are queued for the studio Mac, which
+// applies them and starts sweeping immediately.
+function CloudSearches() {
+  const [searches, setSearches] = useState<any[] | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function refresh(reload = false) {
+    try {
+      if (reload) await loadSnapshot();
+      const res = await api("/api/searches");
+      const all = await res.json();
+      setSearches(all.filter((s: any) => s.name !== "Discovery (automatic)"));
+    } catch {
+      setSearches([]);
+    }
+  }
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function run(
+    op: "create" | "update" | "delete",
+    fields: Record<string, unknown> | undefined,
+    id: number | undefined,
+    successMsg: string
+  ) {
+    setBusy(true);
+    try {
+      const cmdId = await queueManageSearch(op, fields, id);
+      const outcome = await waitForCommand(cmdId);
+      if (!outcome) {
+        alert("The studio Mac hasn't picked this up yet — is it on? It will apply as soon as it catches up.");
+      } else if (outcome.status === "done") {
+        await refresh(true);
+        alert(successMsg);
+      } else {
+        alert(`The Mac couldn't do it:\n\n${outcome.error}`);
+      }
+    } catch (err) {
+      alert(
+        err instanceof Error && err.message.includes("unknown command")
+          ? "The cloud needs a small update for this — tell Claude."
+          : "Couldn't reach the cloud. Check your connection."
+      );
+    }
+    setBusy(false);
+    setShowForm(false);
+    setEditing(null);
+  }
+
+  // The Mac's update API replaces every field, so edits always send the full set
+  const fieldsFromRow = (s: any) => ({
+    name: s.name,
+    query: s.query,
+    category: s.category || "",
+    maxPrice: s.max_price ?? null,
+    minDealScore: s.min_deal_score ?? 0,
+    location: s.location || "",
+    radiusMiles: s.radius_miles ?? 25,
+    isActive: !!s.is_active,
+    cronSchedule: s.cron_schedule || "*/30 * * * *",
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">Searches</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Managed from anywhere — the studio Mac runs them and publishes what it finds.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setEditing(null);
+            setShowForm(!showForm);
+          }}
+          disabled={busy}
+          className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+          + New Search
+        </button>
+      </div>
+
+      {busy && (
+        <p className="text-sm text-indigo-600 mb-3">Sending to the studio Mac — takes up to a minute...</p>
+      )}
+
+      {(showForm || editing) && (
+        <div className="bg-white rounded-lg border p-4 mb-4">
+          <h2 className="text-lg font-semibold mb-3">{editing ? "Edit Search" : "New Search"}</h2>
+          <SearchForm
+            initial={
+              editing
+                ? {
+                    name: editing.name,
+                    query: editing.query,
+                    category: editing.category || "",
+                    maxPrice: editing.max_price ?? null,
+                    minDealScore: editing.min_deal_score ?? 0,
+                    location: editing.location || "",
+                    radiusMiles: editing.radius_miles ?? 25,
+                    cronSchedule: editing.cron_schedule || "*/30 * * * *",
+                  }
+                : undefined
+            }
+            defaults={{ location: CLOUD_DEFAULT_LOCATION }}
+            onSubmit={(data) => {
+              if (editing) {
+                run(
+                  "update",
+                  { ...data, isActive: !!editing.is_active },
+                  editing.id,
+                  "Search updated — the Mac is using the new settings."
+                );
+              } else {
+                run(
+                  "create",
+                  { ...data, isActive: true },
+                  undefined,
+                  "Search created — the Mac is sweeping it right now. New flips show on the Dashboard as they're found."
+                );
+              }
+            }}
+            onCancel={() => {
+              setShowForm(false);
+              setEditing(null);
+            }}
+          />
+        </div>
+      )}
+
+      {searches === null ? (
+        <div className="text-center py-12 text-gray-500">Loading...</div>
+      ) : searches.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-lg border">
+          <p className="text-gray-500">No saved searches yet.</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Discovery still sweeps the big categories automatically — add a search for specific
+            items you're hunting.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {searches.map((s) => (
+            <div key={s.id} className="bg-white rounded-lg border p-4 flex items-start justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h3 className="font-medium">
+                  {s.name}{" "}
+                  {!s.is_active && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 align-middle">paused</span>
+                  )}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  "{s.query}" · {s.location || "default area"} · {s.radius_miles} mi
+                  {s.max_price ? ` · under $${s.max_price}` : ""}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowForm(false);
+                    setEditing(s);
+                  }}
+                  disabled={busy}
+                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() =>
+                    run(
+                      "update",
+                      { ...fieldsFromRow(s), isActive: !s.is_active },
+                      s.id,
+                      s.is_active ? "Search paused." : "Search resumed — sweeping on its schedule again."
+                    )
+                  }
+                  disabled={busy}
+                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200 disabled:opacity-50"
+                >
+                  {s.is_active ? "Pause" : "Resume"}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!confirm(`Delete "${s.name}"? The listings it found disappear from the app too.`)) return;
+                    run("delete", undefined, s.id, "Search deleted.");
+                  }}
+                  disabled={busy}
+                  className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded hover:bg-red-100 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SearchConfigInner() {

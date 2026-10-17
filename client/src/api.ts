@@ -11,7 +11,7 @@ const SNAPSHOT_URL = import.meta.env.VITE_SNAPSHOT_URL || DEFAULT_SNAPSHOT_URL;
 export const isCloud =
   typeof window !== "undefined" && window.location.hostname.endsWith("vercel.app");
 
-let snapshot: { updatedAt: string | null; listings: any[] } | null = null;
+let snapshot: { updatedAt: string | null; listings: any[]; searches: any[] } | null = null;
 
 export function getSnapshotUpdatedAt(): string | null {
   return snapshot?.updatedAt ?? null;
@@ -43,6 +43,7 @@ export async function loadSnapshot(): Promise<void> {
   snapshot = {
     updatedAt: body.updated_at ?? null,
     listings: body.data?.listings || [],
+    searches: body.data?.searches || [],
   };
 }
 
@@ -92,7 +93,7 @@ async function cloudApi(path: string, init?: RequestInit): Promise<Response> {
     return jsonResponse(result);
   }
 
-  if (pathname === "/api/searches") return jsonResponse([]);
+  if (pathname === "/api/searches") return jsonResponse(snapshot!.searches || []);
   if (pathname === "/api/settings") return jsonResponse({});
   return jsonResponse({ error: "Not available in the cloud view" }, 404);
 }

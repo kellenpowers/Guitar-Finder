@@ -24,10 +24,19 @@ export async function publishSnapshot(): Promise<void> {
     if (!res.ok) throw new Error(`listings fetch returned ${res.status}`);
     const listings = await res.json();
 
+    // The phone also shows (and edits, via the command queue) saved searches
+    let searches: any[] = [];
+    try {
+      const sRes = await fetch(`http://localhost:${port}/api/searches`);
+      if (sRes.ok) searches = await sRes.json();
+    } catch {
+      // searches missing from one snapshot is fine
+    }
+
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-publish-key": key },
-      body: JSON.stringify({ updatedAt: new Date().toISOString(), listings }),
+      body: JSON.stringify({ updatedAt: new Date().toISOString(), listings, searches }),
     });
     if (!resp.ok) {
       console.error(`Cloud publish failed: ${resp.status} ${await resp.text()}`);
