@@ -108,6 +108,21 @@ export interface IdentifyResult {
   error?: string;
 }
 
+// Create/update/delete a saved search from the phone — the Mac applies it
+// through its own API, so scheduling starts immediately
+export async function queueManageSearch(
+  op: "create" | "update" | "delete",
+  fields?: Record<string, unknown>,
+  id?: number
+): Promise<string> {
+  const data = await call("POST", {
+    action: "queue",
+    kind: "manage_search",
+    payload: { op, id: id ?? null, fields: fields || {} },
+  });
+  return data.command?.id || "";
+}
+
 // Ask the Mac to work out what the item in these photos is
 export async function queueIdentifyItem(probePaths: string[], photoPaths: string[]): Promise<string> {
   const data = await call("POST", {

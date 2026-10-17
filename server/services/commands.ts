@@ -2,6 +2,8 @@ import { createReverbDraft } from "./reverb-lister.js";
 import { importReverbListings } from "./reverb-importer.js";
 import { createEbayListing } from "./ebay-lister.js";
 import { identifyItem } from "./identify.js";
+import { runSearch } from "./scheduler.js";
+import { publishSnapshot } from "./publisher.js";
 
 // The phone queues listing commands in the cloud; the Mac (which holds all
 // API tokens in .env) polls here, executes them, and reports back.
@@ -80,6 +82,54 @@ async function withFreshFields(payload: any): Promise<any> {
 
 async function runCommand(command: any): Promise<void> {
   const payload = command.payload || {};
+
+  // Search management from the phone — runs through the local API so the
+  // same validation and scheduling apply as on the Mac itself
+  if (command.kind === "manage_search") {
+    const port = process.env.PORT || 3001;
+    const base = `http://localhost:${port}/api/searches`;
+    const op = String(payload.op || "");
+    let res: Response;
+    if (op === "create") {
+      res = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload.fields || {}),
+      });
+    } else if (op === "update" && payload.id) {
+      res = await fetch(`${base}/${payload.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload.fields || {}),
+      });
+    } else if (op === "delete" && payload.id) {
+      res = await fetch(`${base}/${payload.id}`, { method: "DELETE" });
+    } else {
+      await callCloud({
+        action: "complete", id: command.id, status: "error",
+        result: { ok: false, error: `bad manage_search op: ${op}` },
+      });
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: res.ok ? "done" : "error",
+      result: res.ok ? { ok: true, search: data } : { ok: false, error: data.error || `searches ${res.status}` },
+    });
+    if (res.ok) {
+      // Push the fresh search list to the phone, and give a brand-new search
+      // its first sweep right away (in the background — sweeps take minutes)
+      await publishSnapshot().catch(() => {});
+      if (op === "create" && data?.id) {
+        runSearch(data).catch((err) =>
+          console.error("First sweep of new search failed:", err instanceof Error ? err.message : err)
+        );
+      }
+    }
+    return;
+  }
 
   if (command.kind === "identify_item") {
     const result = await identifyItem({

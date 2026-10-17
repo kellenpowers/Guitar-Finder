@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
+import { scheduleSearch, stopSearch } from "../services/scheduler.js";
 
 const router = Router();
 
@@ -26,7 +27,9 @@ router.post("/", (req, res) => {
     name, query, category || "", maxPrice || null, minDealScore || 0,
     location || "", radiusMiles || 25, cronSchedule || "*/30 * * * *"
   );
-  const search = db.prepare("SELECT * FROM saved_searches WHERE id = ?").get(result.lastInsertRowid);
+  const search = db.prepare("SELECT * FROM saved_searches WHERE id = ?").get(result.lastInsertRowid) as any;
+  // Start sweeping right away — without this, a new search waited for a restart
+  if (search?.is_active) scheduleSearch(search);
   res.status(201).json(search);
 });
 
@@ -44,13 +47,17 @@ router.put("/:id", (req, res) => {
     location || "", radiusMiles || 25, isActive ? 1 : 0, cronSchedule || "*/30 * * * *",
     req.params.id
   );
-  const search = db.prepare("SELECT * FROM saved_searches WHERE id = ?").get(req.params.id);
+  const search = db.prepare("SELECT * FROM saved_searches WHERE id = ?").get(req.params.id) as any;
   if (!search) return res.status(404).json({ error: "Not found" });
+  // Re-schedule with the new settings (or stop it if it was paused)
+  stopSearch(Number(req.params.id));
+  if (search.is_active) scheduleSearch(search);
   res.json(search);
 });
 
 router.delete("/:id", (req, res) => {
   const db = getDb();
+  stopSearch(Number(req.params.id));
   const result = db.prepare("DELETE FROM saved_searches WHERE id = ?").run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
