@@ -36,6 +36,11 @@ export default function SearchForm({ initial, defaults, onSubmit, onCancel }: Se
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Area scans (no keywords) sweep six category pages per run — default them
+    // to hourly unless the owner set a schedule deliberately (polite scraping)
+    const isAreaScan = !query.trim();
+    const schedule =
+      isAreaScan && cronSchedule === "*/30 * * * *" ? "0 * * * *" : cronSchedule;
     onSubmit({
       name,
       query,
@@ -44,7 +49,7 @@ export default function SearchForm({ initial, defaults, onSubmit, onCancel }: Se
       minDealScore: Number(minDealScore),
       location,
       radiusMiles: Number(radiusMiles),
-      cronSchedule,
+      cronSchedule: schedule,
     });
   }
 
@@ -68,10 +73,13 @@ export default function SearchForm({ initial, defaults, onSubmit, onCancel }: Se
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. Fender Stratocaster"
+            placeholder="Leave empty to scan EVERYTHING in the area"
             className="mt-1 block w-full rounded border-gray-300 shadow-sm text-sm p-2 border"
-            required
           />
+          <p className="text-xs text-gray-400 mt-1">
+            No words = area scan: every new listing in the big resale categories
+            on Facebook (and Craigslist where it has a local site), valued automatically.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Category</label>

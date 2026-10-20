@@ -167,7 +167,8 @@ function CloudSearches() {
                   )}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  "{s.query}" · {s.location || "default area"} · {s.radius_miles} mi
+                  {s.query?.trim() ? `"${s.query}"` : "Area scan — everything new"} ·{" "}
+                  {s.location || "default area"} · {s.radius_miles} mi
                   {s.max_price ? ` · under $${s.max_price}` : ""}
                 </p>
               </div>

@@ -63,6 +63,64 @@ function worthValuing(l: ScrapedListing): boolean {
   );
 }
 
+// Phase 1 for any area: browse each category page newest-first and keep what's
+// worth valuing. Shared by the hourly discovery sweep (home city) and by
+// keyword-less "area scan" saved searches pointed at other towns.
+export async function sweepCategoriesInto(
+  searchId: number,
+  city: string,
+  clSite: string
+): Promise<{ found: number; newCount: number }> {
+  const db = getDb();
+  const insertStmt = db.prepare(`
+    INSERT OR IGNORE INTO listings (search_id, source, external_id, title, description, price, image_url, listing_url, location, posted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  let found = 0;
+  let newCount = 0;
+
+  for (const cat of CATEGORIES) {
+    const batches: Array<{ source: string; listings: ScrapedListing[] }> = [];
+
+    if (cat.fb) {
+      try {
+        const base = city
+          ? `https://www.facebook.com/marketplace/${city}/${cat.fb}`
+          : `https://www.facebook.com/marketplace/category/${cat.fb}`;
+        const url = `${base}?sortBy=creation_time_descend&daysSinceListed=1`;
+        batches.push({ source: "facebook", listings: await facebookScraper.scrapeUrl(url) });
+      } catch (err) {
+        console.error(`Discovery FB ${cat.name} failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (cat.cl && clSite) {
+      try {
+        batches.push({
+          source: "craigslist",
+          listings: await scrapeCraigslistSection(clSite, cat.cl),
+        });
+      } catch (err) {
+        console.error(`Discovery CL ${cat.name} failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    for (const { source, listings } of batches) {
+      for (const l of listings) {
+        found++;
+        if (!worthValuing(l)) continue;
+        const result = insertStmt.run(
+          searchId, source, l.externalId, l.title, l.description,
+          l.price, l.imageUrl, l.listingUrl, l.location, l.postedAt
+        );
+        if (result.changes > 0) newCount++;
+      }
+    }
+  }
+
+  return { found, newCount };
+}
+
 export async function runDiscovery(): Promise<{ found: number; newCount: number; valued: number }> {
   if (running) {
     console.log("Discovery already running — skipping this trigger.");
@@ -77,89 +135,11 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
 
     console.log(`Discovery sweep starting (city: ${city || "account default"})...`);
 
-    // Phase 1: sweep category pages newest-first
-    const insertStmt = db.prepare(`
-      INSERT OR IGNORE INTO listings (search_id, source, external_id, title, description, price, image_url, listing_url, location, posted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    let found = 0;
-    let newCount = 0;
-
-    for (const cat of CATEGORIES) {
-      const batches: Array<{ source: string; listings: ScrapedListing[] }> = [];
-
-      if (cat.fb) {
-        try {
-          const base = city
-            ? `https://www.facebook.com/marketplace/${city}/${cat.fb}`
-            : `https://www.facebook.com/marketplace/category/${cat.fb}`;
-          const url = `${base}?sortBy=creation_time_descend&daysSinceListed=1`;
-          batches.push({ source: "facebook", listings: await facebookScraper.scrapeUrl(url) });
-        } catch (err) {
-          console.error(`Discovery FB ${cat.name} failed:`, err instanceof Error ? err.message : err);
-        }
-      }
-
-      if (cat.cl && clSite) {
-        try {
-          batches.push({
-            source: "craigslist",
-            listings: await scrapeCraigslistSection(clSite, cat.cl),
-          });
-        } catch (err) {
-          console.error(`Discovery CL ${cat.name} failed:`, err instanceof Error ? err.message : err);
-        }
-      }
-
-      for (const { source, listings } of batches) {
-        for (const l of listings) {
-          found++;
-          if (!worthValuing(l)) continue;
-          const result = insertStmt.run(
-            searchId, source, l.externalId, l.title, l.description,
-            l.price, l.imageUrl, l.listingUrl, l.location, l.postedAt
-          );
-          if (result.changes > 0) newCount++;
-        }
-      }
-    }
+    const { found, newCount } = await sweepCategoriesInto(searchId, city, clSite);
 
     await applyDistances().catch((err) => console.error("Distance pass failed:", err));
 
-    // Phase 2: value the freshest unvalued discovery finds against sold prices
-    const unvalued = db.prepare(`
-      SELECT l.* FROM listings l
-      LEFT JOIN market_prices mp ON mp.listing_id = l.id
-      WHERE l.search_id = ? AND mp.id IS NULL
-      ORDER BY l.scraped_at DESC
-      LIMIT ?
-    `).all(searchId, VALUATION_FETCH_LIMIT) as any[];
-
-    let valued = 0;
-    let networkLookups = 0;
-    const priceStmt = db.prepare(`
-      INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    for (const listing of unvalued) {
-      if (networkLookups >= VALUATIONS_PER_RUN) break;
-      try {
-        const { result, fromCache } = await estimateValue(listing.title);
-        if (result) {
-          priceStmt.run(
-            listing.id, listing.title, result.estimatedValue,
-            JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null
-          );
-          valued++;
-        }
-        if (!fromCache) {
-          networkLookups++;
-          await new Promise((r) => setTimeout(r, 1500)); // politeness between real lookups
-        }
-      } catch (err) {
-        console.error(`Discovery valuation failed for "${listing.title}":`, err);
-      }
-    }
+    const { valued, networkLookups } = await valueUnvalued(searchId);
 
     await applySellerNames().catch((err) => console.error("Seller-name pass failed:", err));
     await publishSnapshot();
@@ -172,4 +152,46 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
   } finally {
     running = false;
   }
+}
+
+// Phase 2 for any search: value its freshest unvalued finds against sold
+// prices, capped per run for politeness (cache hits are free).
+export async function valueUnvalued(
+  searchId: number
+): Promise<{ valued: number; networkLookups: number }> {
+  const db = getDb();
+  const unvalued = db.prepare(`
+    SELECT l.* FROM listings l
+    LEFT JOIN market_prices mp ON mp.listing_id = l.id
+    WHERE l.search_id = ? AND mp.id IS NULL
+    ORDER BY l.scraped_at DESC
+    LIMIT ?
+  `).all(searchId, VALUATION_FETCH_LIMIT) as any[];
+
+  let valued = 0;
+  let networkLookups = 0;
+  const priceStmt = db.prepare(`
+    INSERT INTO market_prices (listing_id, query, estimated_market_value, reverb_listings, value_source, sales_per_week)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  for (const listing of unvalued) {
+    if (networkLookups >= VALUATIONS_PER_RUN) break;
+    try {
+      const { result, fromCache } = await estimateValue(listing.title);
+      if (result) {
+        priceStmt.run(
+          listing.id, listing.title, result.estimatedValue,
+          JSON.stringify(result.comparables), result.source, result.salesPerWeek ?? null
+        );
+        valued++;
+      }
+      if (!fromCache) {
+        networkLookups++;
+        await new Promise((r) => setTimeout(r, 1500)); // politeness between real lookups
+      }
+    } catch (err) {
+      console.error(`Valuation failed for "${listing.title}":`, err);
+    }
+  }
+  return { valued, networkLookups };
 }
