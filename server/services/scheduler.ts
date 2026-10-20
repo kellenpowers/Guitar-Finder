@@ -1,12 +1,12 @@
 import cron from "node-cron";
 import { getDb } from "../db/index.js";
-import { facebookScraper } from "../scrapers/facebook.js";
+import { facebookScraper, citySlug } from "../scrapers/facebook.js";
 import { craigslistScraper } from "../scrapers/craigslist.js";
 import { ebayScraper } from "../scrapers/ebay.js";
 import { reverbScraper } from "../scrapers/reverb.js";
 import { offerUpScraper } from "../scrapers/offerup.js";
 import { estimateValue } from "./valuation.js";
-import { runDiscovery, DISCOVERY_CRON } from "./discovery.js";
+import { runDiscovery, DISCOVERY_CRON, sweepCategoriesInto, valueUnvalued } from "./discovery.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
 import { applySellerNames } from "./seller-names.js";
@@ -70,6 +70,21 @@ export function stopSearch(searchId: number): void {
 }
 
 export async function runSearch(search: any): Promise<number> {
+  // No keywords = an "area scan": browse the big resale categories newest-
+  // first in that town (like the hourly discovery sweep, pointed wherever the
+  // owner is hunting) instead of keyword-searching the five sources.
+  if (!String(search.query || "").trim()) {
+    const city = citySlug(search.location || "");
+    console.log(`Area scan "${search.name}" starting (city: ${city || "account default"})...`);
+    const { found, newCount } = await sweepCategoriesInto(search.id, city, city);
+    await applyDistances().catch((err) => console.error("Distance pass failed:", err));
+    const { valued } = await valueUnvalued(search.id);
+    await applySellerNames().catch((err) => console.error("Seller-name pass failed:", err));
+    await publishSnapshot();
+    console.log(`Area scan "${search.name}": ${found} listings seen, ${newCount} new kept, ${valued} valued.`);
+    return newCount;
+  }
+
   const db = getDb();
   const options: ScraperOptions = {
     query: search.query,
