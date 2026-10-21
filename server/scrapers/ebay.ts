@@ -211,12 +211,19 @@ export async function ebayApiSelfTest(): Promise<void> {
   }
 }
 
+// eBay has hard bot-blocked sold-listings pages from this machine for weeks
+// (every attempt returns an error page), and the headless-browser attempts
+// correlate with the SIGABRT crashes that restart the app ~7x/day. The scrape
+// is OFF until eBay grants Marketplace Insights API access — flip this back on
+// (or better, replace the scrape with the API) when that comes through.
+const EBAY_SOLD_SCRAPE_ENABLED = false;
+
 // After this many consecutive bot-check pages, stop trying sold lookups for
 // the rest of the session — each failure costs ~2 slow page loads, and a
 // blocked machine stays blocked for a while.
 const SOLD_BREAKER_LIMIT = 3;
 let soldErrorStreak = 0;
-let soldScrapeDisabled = false;
+let soldScrapeDisabled = !EBAY_SOLD_SCRAPE_ENABLED;
 
 // Estimate market value from recently SOLD eBay listings (median price).
 // Used as a valuation fallback for items Reverb doesn't cover (cameras, etc.).
