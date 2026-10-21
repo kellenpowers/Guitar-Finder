@@ -3,7 +3,7 @@ import { getPasscode, setPasscode } from "../api";
 import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
   generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
-  queueListOnEbay, waitForCommand, downscaleImage, queueIdentifyItem,
+  queueListOnEbay, waitForCommand, downscaleImage, queueIdentifyItem, isReverbish,
   type InventoryItem, type IdentifyResult,
 } from "../lib/inventory";
 import { copyText } from "../lib/clipboard";
@@ -26,6 +26,11 @@ export default function Inventory() {
   const [idResult, setIdResult] = useState<IdentifyResult | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Which platforms to list on, per item. Defaults: eBay always, Reverb when
+  // it's music gear (Reverb doesn't list cameras, consoles, furniture...).
+  const [platformSel, setPlatformSel] = useState<Record<string, { ebay: boolean; reverb: boolean }>>({});
+  const selFor = (item: InventoryItem) =>
+    platformSel[item.id] ?? { ebay: true, reverb: isReverbish(item.title) };
 
   async function load() {
     try {
@@ -183,6 +188,64 @@ export default function Inventory() {
       setItems((prev) => (prev || []).map((i) => (i.id === item.id ? updated : i)));
     } catch {
       alert("A photo failed to upload. Try again.");
+    }
+    setBusyId(null);
+  }
+
+  // One tap lists on every toggled platform that isn't already live
+  async function handleListIt(item: InventoryItem) {
+    const sel = selFor(item);
+    const toEbay = sel.ebay && !item.ebay_url;
+    const toReverb = sel.reverb && !item.reverb_url;
+    if (!toEbay && !toReverb) {
+      return alert("Nothing to do — it's already live everywhere you've toggled on.");
+    }
+    if (toEbay && !item.target_price) return alert("Set a target price first — eBay needs one.");
+    if (toEbay && item.photos.length === 0) {
+      return alert("eBay requires at least one photo — add photos first.");
+    }
+    if (!toEbay && toReverb && item.photos.length === 0 && !confirm("No photos yet — list on Reverb without photos?")) {
+      return;
+    }
+    if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — continue anyway?")) {
+      return;
+    }
+    const names = [
+      toEbay && "eBay (goes LIVE, price auto-raised to cover its bigger fees)",
+      toReverb && "Reverb (draft you review and publish)",
+    ]
+      .filter(Boolean)
+      .join(" and ");
+    if (!confirm(`List "${item.title}" on ${names}?`)) return;
+
+    setBusyId(item.id);
+    try {
+      const jobs: Promise<{ platform: string; outcome: Awaited<ReturnType<typeof waitForCommand>> }>[] = [];
+      if (toEbay) {
+        jobs.push(queueListOnEbay(item).then((id) => waitForCommand(id).then((outcome) => ({ platform: "eBay", outcome }))));
+      }
+      if (toReverb) {
+        jobs.push(queueListOnReverb(item).then((id) => waitForCommand(id).then((outcome) => ({ platform: "Reverb", outcome }))));
+      }
+      const results = await Promise.all(jobs);
+      await load();
+      alert(
+        results
+          .map(({ platform, outcome }) =>
+            !outcome
+              ? `${platform}: the Mac hasn't finished yet — is it on? Tap Refresh later.`
+              : outcome.status === "done"
+                ? `${platform}: done — the link is on the item.`
+                : `${platform} failed: ${outcome.error}`
+          )
+          .join("\n\n")
+      );
+    } catch (err) {
+      alert(
+        err instanceof Error && err.message.includes("unknown command")
+          ? "The cloud needs a small update for this — tell Claude."
+          : "Couldn't queue it. Check your connection and try again."
+      );
     }
     setBusyId(null);
   }
@@ -434,32 +497,19 @@ export default function Inventory() {
                     eBay ✓ live
                   </a>
                 ) : (
-                  <button
-                    onClick={async () => {
-                      if (!item.target_price) return alert("Set a target price first.");
-                      if (item.photos.length === 0) return alert("eBay requires at least one photo — add photos first.");
-                      if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — publish anyway?")) return;
-                      if (!confirm(`This publishes a LIVE eBay listing (price auto-raised above $${item.target_price} to cover eBay's bigger fees). Continue?`)) return;
-                      try {
-                        const cmdId = await queueListOnEbay(item);
-                        alert("Sent! The studio Mac is publishing it now — keep this page open, the result pops up here in a minute.");
-                        const outcome = await waitForCommand(cmdId);
-                        if (outcome === null) {
-                          alert("The Mac hasn't finished it yet — is it on and running Flip Finder? The listing happens as soon as it catches up; tap Refresh later.");
-                        } else if (outcome.status === "done") {
-                          await load();
-                          alert("eBay listing is LIVE — the eBay link is on the item now.");
-                        } else {
-                          alert(`eBay rejected the listing:\n\n${outcome.error}\n\nFix what it names (or tell Claude) and tap List on eBay again.`);
-                        }
-                      } catch {
-                        alert("Couldn't queue it. Check your connection and try again.");
+                  <label className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-gray-700 border rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selFor(item).ebay}
+                      onChange={(e) =>
+                        setPlatformSel((prev) => ({
+                          ...prev,
+                          [item.id]: { ...selFor(item), ebay: e.target.checked },
+                        }))
                       }
-                    }}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                  >
-                    List on eBay
-                  </button>
+                    />
+                    eBay
+                  </label>
                 )}
                 {item.reverb_url ? (
                   <a
@@ -468,32 +518,30 @@ export default function Inventory() {
                     rel="noopener noreferrer"
                     className="px-3 py-1.5 bg-orange-100 text-orange-800 text-sm rounded hover:bg-orange-200"
                   >
-                    Reverb draft ✓ open &amp; publish
+                    Reverb ✓
                   </a>
                 ) : (
-                  <button
-                    onClick={async () => {
-                      if (item.photos.length === 0 && !confirm("No photos yet — list on Reverb without photos?")) return;
-                      if (item.listing_draft.includes("[Describe") && !confirm("The draft still has the [Describe condition] placeholder — send anyway?")) return;
-                      try {
-                        const cmdId = await queueListOnReverb(item);
-                        alert("Sent! The studio Mac is creating the Reverb draft — keep this page open, the result pops up here in a minute.");
-                        const outcome = await waitForCommand(cmdId);
-                        if (outcome === null) {
-                          alert("The Mac hasn't finished it yet — is it on and running Flip Finder? The draft is created as soon as it catches up; tap Refresh later.");
-                        } else if (outcome.status === "done") {
-                          await load();
-                          alert("Reverb draft created — open it from the item to review and publish.");
-                        } else {
-                          alert(`Reverb rejected it:\n\n${outcome.error}\n\nFix what it names (or tell Claude) and try again.`);
-                        }
-                      } catch {
-                        alert("Couldn't queue it. Check your connection and try again.");
+                  <label className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-gray-700 border rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selFor(item).reverb}
+                      onChange={(e) =>
+                        setPlatformSel((prev) => ({
+                          ...prev,
+                          [item.id]: { ...selFor(item), reverb: e.target.checked },
+                        }))
                       }
-                    }}
-                    className="px-3 py-1.5 bg-orange-500 text-white text-sm rounded hover:bg-orange-600"
+                    />
+                    Reverb
+                  </label>
+                )}
+                {(!item.ebay_url || !item.reverb_url) && (
+                  <button
+                    onClick={() => handleListIt(item)}
+                    disabled={busyId === item.id}
+                    className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    List on Reverb
+                    {busyId === item.id ? "Listing..." : "List It"}
                   </button>
                 )}
                 <button

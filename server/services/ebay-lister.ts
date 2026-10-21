@@ -232,6 +232,25 @@ export async function ebayWhoAmI(): Promise<{ username: string; feedbackScore: n
   }
 }
 
+// For multi-unit listings (one eBay listing covering several identical items):
+// set how many units remain available. Use endEbayListing when it hits zero.
+export async function reviseEbayQuantity(
+  itemId: string,
+  quantity: number
+): Promise<{ ok: boolean; error?: string }> {
+  const qty = Math.max(1, Math.floor(quantity));
+  const inner = `<Item><ItemID>${xmlEscape(itemId)}</ItemID><Quantity>${qty}</Quantity></Item>`;
+  const response = await tradingCall("ReviseFixedPriceItem", inner);
+  const ack = response.match(/<Ack>([^<]*)<\/Ack>/)?.[1] || "";
+  if (ack === "Success" || ack === "Warning") {
+    console.log(`eBay listing ${itemId} quantity set to ${qty} (a unit sold elsewhere).`);
+    return { ok: true };
+  }
+  const error = tradingErrors(response);
+  console.error(`FAILED to set eBay listing ${itemId} quantity to ${qty}: ${error} — ADJUST IT MANUALLY.`);
+  return { ok: false, error };
+}
+
 export async function endEbayListing(itemId: string): Promise<{ ok: boolean; error?: string }> {
   const inner = `<ItemID>${xmlEscape(itemId)}</ItemID>
   <EndingReason>NotAvailable</EndingReason>`;
