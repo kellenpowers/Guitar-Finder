@@ -46,6 +46,22 @@ describe("removePriceTalk (description/price consistency)", () => {
     expect(removePriceTalk("Looking to get around $500.")).toBe("");
   });
 
+  it("removes 'listing for' and stale-price phrasings (prices change; text must not pin them)", () => {
+    expect(
+      removePriceTalk("These sell new for $799 but I'm listing for $450.")
+    ).toBe("");
+    expect(removePriceTalk("Listing it at $300 this week.")).toBe("");
+    expect(removePriceTalk("Was $800, now $450.")).toBe("");
+    expect(removePriceTalk("On sale for $99!")).toBe("");
+    expect(removePriceTalk("Sale price: $275.")).toBe("");
+    expect(removePriceTalk("Reduced to $650.")).toBe("");
+    // ...but "listing" in a non-price role survives
+    expect(removePriceTalk("This listing is for a matched pair of speakers.")).toContain(
+      "matched pair"
+    );
+    expect(removePriceTalk("These sell new for $799 at Sweetwater.")).toContain("$799");
+  });
+
   it("never splits a decimal price into a new wrong price", () => {
     expect(removePriceTalk("Asking $449.99 OBO. No trades.")).toBe("No trades.");
     expect(removePriceTalk("Mint condition. Asking $1,299.99 shipped. Includes the case.")).toBe(

@@ -9,7 +9,11 @@ import { endEbayListing, ebayItemIdFromUrl, reverbIdFromUrl } from "./ebay-liste
 
 // ===== Sold-sync tunables =====
 const SYNC_INTERVAL_MS = 10 * 60_000; // check every 10 minutes
-const ORDER_LOOKBACK_DAYS = 3;
+// Wide on purpose: if the Mac is off for days when something sells, the sale
+// must still be inside the window when it comes back (it once sat off for 2
+// days). Re-checking old sales is free — items already marked sold are skipped.
+const ORDER_LOOKBACK_DAYS = 14;
+const REVERB_SOLD_PAGES = 3; // newest 150 sold listings — plenty of history
 
 let running = false;
 
@@ -30,6 +34,9 @@ async function getEbaySoldItemIds(): Promise<Set<string>> {
     }
     const data = await res.json();
     for (const order of data?.orders || []) {
+      // A cancelled order is not a sale — it must not take the other listing down
+      const cancelState = order?.cancelStatus?.cancelState;
+      if (cancelState && cancelState !== "NONE_REQUESTED") continue;
       for (const li of order?.lineItems || []) {
         if (li?.legacyItemId) ids.add(String(li.legacyItemId));
       }
@@ -45,23 +52,27 @@ async function getReverbSoldIds(): Promise<Set<string>> {
   const token = process.env.REVERB_API_TOKEN;
   if (!token) return ids;
   try {
-    const res = await fetch(
-      "https://api.reverb.com/api/my/listings?state=sold&per_page=50",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/hal+json",
-          "Accept-Version": "3.0",
-        },
+    for (let page = 1; page <= REVERB_SOLD_PAGES; page++) {
+      const res = await fetch(
+        `https://api.reverb.com/api/my/listings?state=sold&per_page=50&page=${page}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/hal+json",
+            "Accept-Version": "3.0",
+          },
+        }
+      );
+      if (!res.ok) {
+        console.warn(`Sold-sync: Reverb listings returned ${res.status}`);
+        return ids;
       }
-    );
-    if (!res.ok) {
-      console.warn(`Sold-sync: Reverb listings returned ${res.status}`);
-      return ids;
-    }
-    const data = await res.json();
-    for (const l of data?.listings || []) {
-      if (l?.id) ids.add(String(l.id));
+      const data = await res.json();
+      const listings = data?.listings || [];
+      for (const l of listings) {
+        if (l?.id) ids.add(String(l.id));
+      }
+      if (listings.length < 50) break;
     }
   } catch (err) {
     console.warn("Sold-sync: Reverb check failed:", err instanceof Error ? err.message : err);
@@ -89,8 +100,13 @@ async function endReverbListing(listingId: string): Promise<boolean> {
     console.log(`Reverb listing ${listingId} ended (sold elsewhere).`);
     return true;
   }
+  // Already gone (ended by hand, or sold there too) counts as done
+  if (res.status === 404 || res.status === 422) {
+    console.log(`Reverb listing ${listingId} was already ended/gone — nothing to take down.`);
+    return true;
+  }
   console.error(
-    `FAILED to end Reverb listing ${listingId} (${res.status}) — END IT MANUALLY ON REVERB.`
+    `FAILED to end Reverb listing ${listingId} (${res.status}) — will retry in 10 minutes. If this repeats, END IT MANUALLY ON REVERB.`
   );
   return false;
 }
@@ -119,15 +135,27 @@ async function syncOnce(): Promise<void> {
       const soldOnReverb = !!rid && reverbSold.has(rid);
       if (!soldOnEbay && !soldOnReverb) continue;
 
-      const where = soldOnEbay ? "eBay" : "Reverb";
+      const where =
+        soldOnEbay && soldOnReverb ? "BOTH platforms" : soldOnEbay ? "eBay" : "Reverb";
       console.log(`SOLD on ${where}: "${item.title}" — syncing the other platform.`);
 
-      if (soldOnEbay && rid) await endReverbListing(rid);
-      if (soldOnReverb && eid) await endEbayListing(eid);
+      // Only mark the item sold once the duplicate is actually down — a failed
+      // take-down leaves it "listed" so the next pass retries automatically
+      let endedOk = true;
+      if (soldOnEbay && rid && !soldOnReverb) {
+        endedOk = (await endReverbListing(rid)) && endedOk;
+      }
+      if (soldOnReverb && eid && !soldOnEbay) {
+        const result = await endEbayListing(eid);
+        // eBay phrases "already ended" as an error — that still counts as down
+        endedOk = (result.ok || /alread|has ended|closed/i.test(result.error || "")) && endedOk;
+      }
 
-      await callCloud({ action: "update", id: item.id, status: "sold" }).catch((err) =>
-        console.error("Sold-sync: couldn't mark item sold in inventory:", err)
-      );
+      if (endedOk) {
+        await callCloud({ action: "update", id: item.id, status: "sold" }).catch((err) =>
+          console.error("Sold-sync: couldn't mark item sold in inventory:", err)
+        );
+      }
     }
   } finally {
     running = false;
