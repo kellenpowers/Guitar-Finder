@@ -27,6 +27,12 @@ import { ebayWhoAmI } from "./services/ebay-lister.js";
 import { startSoldSync } from "./services/sold-sync.js";
 import { getDb } from "./db/index.js";
 
+// Timestamp every log line — crash forensics are impossible without them
+for (const level of ["log", "warn", "error"] as const) {
+  const original = console[level].bind(console);
+  console[level] = (...args: unknown[]) => original(new Date().toISOString(), ...args);
+}
+
 // A stray error from a background scrape must never kill the whole app
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled rejection (continuing):", err);
@@ -34,6 +40,15 @@ process.on("unhandledRejection", (err) => {
 process.on("uncaughtException", (err) => {
   console.error("Uncaught exception (continuing):", err);
 });
+
+// Say WHY the process is going down, so a crash loop can't hide its cause
+process.on("exit", (code) => console.log(`Process exiting (code ${code}).`));
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+  process.on(sig, () => {
+    console.log(`Received ${sig} — shutting down.`);
+    process.exit(0);
+  });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
