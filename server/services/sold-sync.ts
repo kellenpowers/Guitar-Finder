@@ -56,36 +56,70 @@ async function getEbaySoldUnits(): Promise<Map<string, number>> {
   return units;
 }
 
+const REVERB_HEADERS = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  Accept: "application/hal+json",
+  "Accept-Version": "3.0",
+});
+
+// Reverb orders carry the listing id in different spots depending on the
+// payload vintage — accept every known shape. Exported for tests.
+export function reverbOrderListingId(order: any): string {
+  if (order?.product_id) return String(order.product_id);
+  if (order?.listing_id) return String(order.listing_id);
+  const href = String(order?._links?.listing?.href || order?._links?.product?.href || "");
+  const m = href.match(/listings\/(\d+)/);
+  return m ? m[1] : "";
+}
+
+// A sale is an ORDER — that's the ground truth. The listings state check rides
+// along as a second source, but orders are what we trust.
 async function getReverbSoldIds(): Promise<Set<string>> {
   const ids = new Set<string>();
   const token = process.env.REVERB_API_TOKEN;
   if (!token) return ids;
+
+  // Primary: the seller's orders
   try {
     for (let page = 1; page <= REVERB_SOLD_PAGES; page++) {
       const res = await fetch(
-        `https://api.reverb.com/api/my/listings?state=sold&per_page=50&page=${page}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/hal+json",
-            "Accept-Version": "3.0",
-          },
-        }
+        `https://api.reverb.com/api/my/orders/selling/all?per_page=50&page=${page}`,
+        { headers: REVERB_HEADERS(token) }
       );
       if (!res.ok) {
-        console.warn(`Sold-sync: Reverb listings returned ${res.status}`);
-        return ids;
+        console.warn(`Sold-sync: Reverb orders returned ${res.status}`);
+        break;
       }
       const data = await res.json();
-      const listings = data?.listings || [];
-      for (const l of listings) {
-        if (l?.id) ids.add(String(l.id));
+      const orders = data?.orders || [];
+      for (const order of orders) {
+        // A cancelled or refunded order is not a sale
+        if (/cancel|refund/i.test(String(order?.status || ""))) continue;
+        const id = reverbOrderListingId(order);
+        if (id) ids.add(id);
       }
-      if (listings.length < 50) break;
+      if (orders.length < 50) break;
     }
   } catch (err) {
-    console.warn("Sold-sync: Reverb check failed:", err instanceof Error ? err.message : err);
+    console.warn("Sold-sync: Reverb orders check failed:", err instanceof Error ? err.message : err);
   }
+
+  // Secondary: listings Reverb marks sold
+  try {
+    const res = await fetch(
+      "https://api.reverb.com/api/my/listings?state=sold&per_page=50",
+      { headers: REVERB_HEADERS(token) }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      for (const l of data?.listings || []) {
+        if (l?.id) ids.add(String(l.id));
+      }
+    }
+  } catch {
+    // orders are the source of truth; this one is best-effort
+  }
+
   return ids;
 }
 
@@ -171,6 +205,11 @@ async function syncOnce(): Promise<void> {
       getEbaySoldUnits(),
       getReverbSoldIds(),
     ]);
+    // Heartbeat — a silent watcher hid a missed sale once; never again
+    console.log(
+      `Sold-sync pass: ${relevant.filter((i) => i.status === "listed").length} listed items, ` +
+        `${ebaySoldUnits.size} eBay listings with recent sales, ${reverbSold.size} Reverb sold ids.`
+    );
     if (ebaySoldUnits.size === 0 && reverbSold.size === 0) return;
 
     // Group by shared eBay listing; items without one stand alone

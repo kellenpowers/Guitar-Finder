@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { planGroupSync, type GroupMember } from "../services/sold-sync.js";
+import { planGroupSync, reverbOrderListingId, type GroupMember } from "../services/sold-sync.js";
+
+describe("reverbOrderListingId (order payload shapes)", () => {
+  it("reads the listing id from any known field", () => {
+    expect(reverbOrderListingId({ product_id: 102834010 })).toBe("102834010");
+    expect(reverbOrderListingId({ listing_id: "102834010" })).toBe("102834010");
+    expect(
+      reverbOrderListingId({ _links: { listing: { href: "https://api.reverb.com/api/listings/102834010" } } })
+    ).toBe("102834010");
+    expect(reverbOrderListingId({})).toBe("");
+  });
+});
 
 // Four identical speakers: ONE eBay listing with 4 units, FOUR Reverb listings
 const bose = (): GroupMember[] => [
