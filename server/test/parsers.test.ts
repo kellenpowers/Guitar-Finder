@@ -448,14 +448,21 @@ describe("isJunkListing (service-ad filter)", () => {
 });
 
 describe("platform fee pricing", () => {
+  it("matches the owner's real Reverb fees from the tracker", async () => {
+    const { reverbNet } = await import("../services/fees.js");
+    // Real sale: SM7B at $334 total netted $305.12 (fees $28.88). Buyer-tax
+    // variance means we accept within a dollar.
+    expect(Math.abs(reverbNet(334) - 305.12)).toBeLessThan(1);
+  });
+
   it("eBay price nets the same as the Reverb price after both platforms' cuts", async () => {
-    const { ebayPriceMatchingReverbNet, REVERB_FEE_PCT, EBAY_FEE_PCT } = await import(
+    const { ebayPriceMatchingReverbNet, reverbNet: rn, EBAY_FEE_PCT, EBAY_FEE_FIXED } = await import(
       "../services/fees.js"
     );
     const reverbPrice = 500;
     const ebayPrice = ebayPriceMatchingReverbNet(reverbPrice);
-    const reverbNet = reverbPrice * (1 - REVERB_FEE_PCT);
-    const ebayNet = ebayPrice * (1 - EBAY_FEE_PCT);
+    const reverbNet = rn(reverbPrice);
+    const ebayNet = ebayPrice * (1 - EBAY_FEE_PCT) - EBAY_FEE_FIXED;
     expect(ebayPrice).toBeGreaterThan(reverbPrice); // eBay's cut is bigger
     expect(ebayNet).toBeGreaterThanOrEqual(reverbNet); // never nets less
     expect(ebayNet - reverbNet).toBeLessThan(2); // and only cents more

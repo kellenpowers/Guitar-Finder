@@ -1,6 +1,11 @@
 import { callCloud, fetchCloudInventory } from "./commands.js";
 import { ebayConnection, getEbayUserToken } from "./ebay-auth.js";
-import { endEbayListing, ebayItemIdFromUrl, reverbIdFromUrl } from "./ebay-lister.js";
+import {
+  endEbayListing,
+  reviseEbayQuantity,
+  ebayItemIdFromUrl,
+  reverbIdFromUrl,
+} from "./ebay-lister.js";
 
 // The don't-double-sell watcher. Every few minutes: check both platforms'
 // sold items; when an inventory item sells on one platform, END its duplicate
@@ -17,9 +22,11 @@ const REVERB_SOLD_PAGES = 3; // newest 150 sold listings — plenty of history
 
 let running = false;
 
-async function getEbaySoldItemIds(): Promise<Set<string>> {
-  const ids = new Set<string>();
-  if (!ebayConnection().connected) return ids;
+// eBay sales as UNITS per listing id — one multi-quantity listing can sell
+// several units, and each unit accounts for one inventory item
+async function getEbaySoldUnits(): Promise<Map<string, number>> {
+  const units = new Map<string, number>();
+  if (!ebayConnection().connected) return units;
   try {
     const token = await getEbayUserToken();
     const since = new Date(Date.now() - ORDER_LOOKBACK_DAYS * 86_400_000).toISOString();
@@ -30,7 +37,7 @@ async function getEbaySoldItemIds(): Promise<Set<string>> {
     );
     if (!res.ok) {
       console.warn(`Sold-sync: eBay orders returned ${res.status}`);
-      return ids;
+      return units;
     }
     const data = await res.json();
     for (const order of data?.orders || []) {
@@ -38,13 +45,15 @@ async function getEbaySoldItemIds(): Promise<Set<string>> {
       const cancelState = order?.cancelStatus?.cancelState;
       if (cancelState && cancelState !== "NONE_REQUESTED") continue;
       for (const li of order?.lineItems || []) {
-        if (li?.legacyItemId) ids.add(String(li.legacyItemId));
+        if (!li?.legacyItemId) continue;
+        const id = String(li.legacyItemId);
+        units.set(id, (units.get(id) || 0) + (Number(li.quantity) || 1));
       }
     }
   } catch (err) {
     console.warn("Sold-sync: eBay check failed:", err instanceof Error ? err.message : err);
   }
-  return ids;
+  return units;
 }
 
 async function getReverbSoldIds(): Promise<Set<string>> {
@@ -111,50 +120,111 @@ async function endReverbListing(listingId: string): Promise<boolean> {
   return false;
 }
 
+// One eBay listing can cover SEVERAL inventory items (a multi-unit listing of
+// identical speakers, say), while each unit has its own Reverb listing. Items
+// sharing an ebay_url form a group; a single item is just a group of one.
+// Decide what one group needs this pass. Pure — exported for tests.
+export interface GroupMember {
+  id: string;
+  status: string;
+  rid: string; // Reverb listing id ("" if none)
+}
+export function planGroupSync(
+  members: GroupMember[],
+  ebayUnitsSoldInWindow: number,
+  reverbSoldIds: Set<string>
+): {
+  markSoldViaReverb: GroupMember[]; // sold on Reverb — eBay quantity must drop
+  markSoldViaEbay: GroupMember[]; // sold on eBay — their Reverb listings must end
+  ebayQuantityTarget: number | null; // null = leave eBay alone this pass
+} {
+  const listed = members.filter((m) => m.status === "listed");
+  const soldAlready = members.filter((m) => m.status === "sold");
+
+  // Members that just sold on Reverb
+  const viaReverb = listed.filter((m) => m.rid && reverbSoldIds.has(m.rid));
+
+  // eBay units sold that aren't yet reflected by a sold member. Members that
+  // sold on Reverb don't count against eBay's tally.
+  const ebayAttributed = soldAlready.filter((m) => !(m.rid && reverbSoldIds.has(m.rid))).length;
+  const newEbayUnits = Math.max(0, ebayUnitsSoldInWindow - ebayAttributed);
+  const viaEbay = listed.filter((m) => !viaReverb.includes(m)).slice(0, newEbayUnits);
+
+  // After this pass, this many units should remain available on eBay.
+  // Only touch eBay when a Reverb sale changed the count — eBay tracks its
+  // own sales by itself.
+  const remaining = listed.length - viaReverb.length - viaEbay.length;
+  const ebayQuantityTarget = viaReverb.length > 0 ? remaining : null;
+
+  return { markSoldViaReverb: viaReverb, markSoldViaEbay: viaEbay, ebayQuantityTarget };
+}
+
 async function syncOnce(): Promise<void> {
   if (running) return;
   running = true;
   try {
-    // Items currently listed somewhere, from the cloud inventory
     const items = await fetchCloudInventory().catch(() => [] as any[]);
-    const listed = items.filter(
-      (i) => i.status === "listed" && (i.ebay_url || i.reverb_url)
-    );
-    if (listed.length === 0) return;
+    const relevant = items.filter((i) => i.ebay_url || i.reverb_url);
+    if (relevant.filter((i) => i.status === "listed").length === 0) return;
 
-    const [ebaySold, reverbSold] = await Promise.all([
-      getEbaySoldItemIds(),
+    const [ebaySoldUnits, reverbSold] = await Promise.all([
+      getEbaySoldUnits(),
       getReverbSoldIds(),
     ]);
-    if (ebaySold.size === 0 && reverbSold.size === 0) return;
+    if (ebaySoldUnits.size === 0 && reverbSold.size === 0) return;
 
-    for (const item of listed) {
+    // Group by shared eBay listing; items without one stand alone
+    const groups = new Map<string, any[]>();
+    for (const item of relevant) {
       const eid = ebayItemIdFromUrl(item.ebay_url);
-      const rid = reverbIdFromUrl(item.reverb_url);
-      const soldOnEbay = !!eid && ebaySold.has(eid);
-      const soldOnReverb = !!rid && reverbSold.has(rid);
-      if (!soldOnEbay && !soldOnReverb) continue;
+      const key = eid || `solo:${item.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
 
-      const where =
-        soldOnEbay && soldOnReverb ? "BOTH platforms" : soldOnEbay ? "eBay" : "Reverb";
-      console.log(`SOLD on ${where}: "${item.title}" — syncing the other platform.`);
+    for (const [key, groupItems] of groups) {
+      const eid = key.startsWith("solo:") ? "" : key;
+      const members: GroupMember[] = groupItems.map((i) => ({
+        id: i.id,
+        status: i.status,
+        rid: reverbIdFromUrl(i.reverb_url),
+      }));
+      const plan = planGroupSync(members, eid ? ebaySoldUnits.get(eid) || 0 : 0, reverbSold);
+      if (plan.markSoldViaReverb.length === 0 && plan.markSoldViaEbay.length === 0) continue;
 
-      // Only mark the item sold once the duplicate is actually down — a failed
-      // take-down leaves it "listed" so the next pass retries automatically
-      let endedOk = true;
-      if (soldOnEbay && rid && !soldOnReverb) {
-        endedOk = (await endReverbListing(rid)) && endedOk;
+      const byId = new Map(groupItems.map((i) => [i.id, i]));
+
+      // Sold on eBay: end each unit's Reverb listing, then mark it sold.
+      // A failed take-down leaves the item "listed" so the next pass retries.
+      for (const m of plan.markSoldViaEbay) {
+        console.log(`SOLD on eBay: "${byId.get(m.id)?.title}" — syncing Reverb.`);
+        const endedOk = m.rid ? await endReverbListing(m.rid) : true;
+        if (endedOk) {
+          await callCloud({ action: "update", id: m.id, status: "sold" }).catch((err) =>
+            console.error("Sold-sync: couldn't mark item sold in inventory:", err)
+          );
+        }
       }
-      if (soldOnReverb && eid && !soldOnEbay) {
-        const result = await endEbayListing(eid);
-        // eBay phrases "already ended" as an error — that still counts as down
-        endedOk = (result.ok || /alread|has ended|closed/i.test(result.error || "")) && endedOk;
-      }
 
-      if (endedOk) {
-        await callCloud({ action: "update", id: item.id, status: "sold" }).catch((err) =>
-          console.error("Sold-sync: couldn't mark item sold in inventory:", err)
-        );
+      // Sold on Reverb: shrink (or end) the shared eBay listing, then mark sold
+      if (plan.markSoldViaReverb.length > 0) {
+        let ebayOk = true;
+        if (eid && plan.ebayQuantityTarget !== null) {
+          const result =
+            plan.ebayQuantityTarget <= 0
+              ? await endEbayListing(eid)
+              : await reviseEbayQuantity(eid, plan.ebayQuantityTarget);
+          // "already ended/closed" still counts as down
+          ebayOk = result.ok || /alread|has ended|closed/i.test(result.error || "");
+        }
+        for (const m of plan.markSoldViaReverb) {
+          console.log(`SOLD on Reverb: "${byId.get(m.id)?.title}" — syncing eBay.`);
+          if (ebayOk) {
+            await callCloud({ action: "update", id: m.id, status: "sold" }).catch((err) =>
+              console.error("Sold-sync: couldn't mark item sold in inventory:", err)
+            );
+          }
+        }
       }
     }
   } finally {

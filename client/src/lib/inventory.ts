@@ -108,6 +108,15 @@ export interface IdentifyResult {
   error?: string;
 }
 
+// Would Reverb list this? Reverb is music gear only — cameras, consoles and
+// couches go eBay-only. Decides the default platform toggles; the owner can
+// always flip them.
+const REVERB_GEAR_RE =
+  /guitar|bass|amp(lifier)?|pedal|mic(rophone)?|speaker|monitor|subwoofer|synth|keyboard|piano|organ|drum|cymbal|audio interface|mixer|preamp|compressor|equalizer|\beq\b|turntable|\bdj\b|\bmidi\b|studio|recording|headphone|in-ear|\biem\b|wireless system|pa system|panaray|cab(inet)?|pickup|ukulele|banjo|mandolin|violin|cello|sax(ophone)?|trumpet|trombone|flute|clarinet|harmonica|metronome|tuner|stage light|lighting|power conditioner|rack/i;
+export function isReverbish(title: string): boolean {
+  return REVERB_GEAR_RE.test(title);
+}
+
 // Create/update/delete a saved search from the phone — the Mac applies it
 // through its own API, so scheduling starts immediately
 export async function queueManageSearch(
