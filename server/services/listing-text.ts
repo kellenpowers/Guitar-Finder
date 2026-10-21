@@ -50,9 +50,16 @@ const PRICE_TALK_RES: RegExp[] = [
   new RegExp(String.raw`\b(price(\s+is|:)|priced\s+at|firm\s+at)\s*${FILLER}${AMOUNT_OR_BARE}`, "i"),
   // First-person selling verbs — "$" required so specs survive ("will take
   // 300 watts"): "selling for $450", "would sell for $450", "I'll take $450",
-  // "I want $450", "yours for $99", "let it go for $300", "looking to get $500"
+  // "I want $450", "yours for $99", "let it go for $300", "looking to get
+  // $500", "listing for $450" / "listing it at $450"
   new RegExp(
-    String.raw`${THIRD_PARTY}\b(selling(\s+it)?\s+for|(would|will|can|could)\s+sell\s+(it\s+)?for|sell\s+it\s+for|will\s+take|i'?ll\s+take|i'?d\s+take|i\s+want|yours\s+for|let\s+it\s+go\s+for|looking\s+(to\s+get|for))\s*${FILLER}${AMOUNT}`,
+    String.raw`${THIRD_PARTY}\b(selling(\s+it)?\s+for|(would|will|can|could)\s+sell\s+(it\s+)?for|sell\s+it\s+for|will\s+take|i'?ll\s+take|i'?d\s+take|i\s+want|yours\s+for|let(ting)?\s+(it|this)\s+go\s+(for|at)|looking\s+(to\s+get|for)|listing(\s+(it|this|one|them))?\s+(for|at))\s*${FILLER}${AMOUNT}`,
+    "i"
+  ),
+  // Stale-price phrasings that go wrong the moment the price changes:
+  // "on sale for $450", "sale price $450", "reduced to $450", "was $800, now $450"
+  new RegExp(
+    String.raw`\b(on\s+sale\s+for|sale\s+price:?|reduced\s+to|dropped\s+to|marked\s+down\s+to|now\s+(just\s+|only\s+)?)\s*${FILLER}${AMOUNT}`,
     "i"
   ),
   // A line or sentence that is nothing but a price
