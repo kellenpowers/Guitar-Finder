@@ -22,11 +22,61 @@ const REVERB_SOLD_PAGES = 3; // newest 150 sold listings — plenty of history
 
 let running = false;
 
+// The money facts of a sale — captured from the platform's order and written
+// to the inventory row so the nightly tracker sync can fill the ledger's
+// green sale columns. Fields the payload doesn't carry stay null (the sheet
+// leaves them blank; no guesses in the books).
+export interface SaleFacts {
+  sold_price: number | null;
+  sold_shipping: number | null;
+  sold_fees: number | null;
+  sold_payout: number | null;
+  sold_at: string | null;
+  sold_order: string | null;
+  sold_on: "reverb" | "ebay";
+}
+
+const money = (v: unknown): number | null => {
+  const n = parseFloat(String((v as any)?.amount ?? (v as any)?.value ?? v ?? ""));
+  return Number.isFinite(n) ? n : null;
+};
+
+// Exported for tests.
+export function reverbOrderFacts(order: any): SaleFacts {
+  return {
+    sold_price: money(order?.amount_product),
+    sold_shipping: money(order?.shipping ?? order?.amount_shipping),
+    sold_fees: money(order?.amount_fee ?? order?.selling_fee),
+    sold_payout: money(order?.amount_payout ?? order?.payout),
+    sold_at: order?.paid_at || order?.created_at || null,
+    sold_order: order?.order_number != null ? String(order.order_number) : order?.id != null ? String(order.id) : null,
+    sold_on: "reverb",
+  };
+}
+
+// Exported for tests. Shipping is order-level on eBay, so it's only attributed
+// when the order has a single line item.
+export function ebayLineFacts(order: any, li: any): SaleFacts {
+  const qty = Number(li?.quantity) || 1;
+  const lineTotal = money(li?.lineItemCost ?? li?.total);
+  const singleLine = (order?.lineItems || []).length === 1;
+  return {
+    sold_price: lineTotal != null ? Math.round((lineTotal / qty) * 100) / 100 : null,
+    sold_shipping: singleLine ? money(order?.pricingSummary?.deliveryCost) : null,
+    sold_fees: null, // not in the Fulfillment payload
+    sold_payout: null,
+    sold_at: order?.creationDate || null,
+    sold_order: order?.orderId != null ? String(order.orderId) : null,
+    sold_on: "ebay",
+  };
+}
+
 // eBay sales as UNITS per listing id — one multi-quantity listing can sell
 // several units, and each unit accounts for one inventory item
-async function getEbaySoldUnits(): Promise<Map<string, number>> {
+async function getEbaySold(): Promise<{ units: Map<string, number>; facts: Map<string, SaleFacts> }> {
   const units = new Map<string, number>();
-  if (!ebayConnection().connected) return units;
+  const facts = new Map<string, SaleFacts>();
+  if (!ebayConnection().connected) return { units, facts };
   try {
     const token = await getEbayUserToken();
     const since = new Date(Date.now() - ORDER_LOOKBACK_DAYS * 86_400_000).toISOString();
@@ -37,7 +87,7 @@ async function getEbaySoldUnits(): Promise<Map<string, number>> {
     );
     if (!res.ok) {
       console.warn(`Sold-sync: eBay orders returned ${res.status}`);
-      return units;
+      return { units, facts };
     }
     const data = await res.json();
     for (const order of data?.orders || []) {
@@ -48,12 +98,13 @@ async function getEbaySoldUnits(): Promise<Map<string, number>> {
         if (!li?.legacyItemId) continue;
         const id = String(li.legacyItemId);
         units.set(id, (units.get(id) || 0) + (Number(li.quantity) || 1));
+        if (!facts.has(id)) facts.set(id, ebayLineFacts(order, li));
       }
     }
   } catch (err) {
     console.warn("Sold-sync: eBay check failed:", err instanceof Error ? err.message : err);
   }
-  return units;
+  return { units, facts };
 }
 
 const REVERB_HEADERS = (token: string) => ({
@@ -74,10 +125,11 @@ export function reverbOrderListingId(order: any): string {
 
 // A sale is an ORDER — that's the ground truth. The listings state check rides
 // along as a second source, but orders are what we trust.
-async function getReverbSoldIds(): Promise<Set<string>> {
+async function getReverbSold(): Promise<{ ids: Set<string>; facts: Map<string, SaleFacts> }> {
   const ids = new Set<string>();
+  const facts = new Map<string, SaleFacts>();
   const token = process.env.REVERB_API_TOKEN;
-  if (!token) return ids;
+  if (!token) return { ids, facts };
 
   // Primary: the seller's orders
   try {
@@ -96,7 +148,9 @@ async function getReverbSoldIds(): Promise<Set<string>> {
         // A cancelled or refunded order is not a sale
         if (/cancel|refund/i.test(String(order?.status || ""))) continue;
         const id = reverbOrderListingId(order);
-        if (id) ids.add(id);
+        if (!id) continue;
+        ids.add(id);
+        if (!facts.has(id)) facts.set(id, reverbOrderFacts(order));
       }
       if (orders.length < 50) break;
     }
@@ -120,7 +174,7 @@ async function getReverbSoldIds(): Promise<Set<string>> {
     // orders are the source of truth; this one is best-effort
   }
 
-  return ids;
+  return { ids, facts };
 }
 
 async function endReverbListing(listingId: string): Promise<boolean> {
@@ -201,16 +255,14 @@ async function syncOnce(): Promise<void> {
     const relevant = items.filter((i) => i.ebay_url || i.reverb_url);
     if (relevant.filter((i) => i.status === "listed").length === 0) return;
 
-    const [ebaySoldUnits, reverbSold] = await Promise.all([
-      getEbaySoldUnits(),
-      getReverbSoldIds(),
-    ]);
+    const [ebaySold, reverbSold] = await Promise.all([getEbaySold(), getReverbSold()]);
+    const ebaySoldUnits = ebaySold.units;
     // Heartbeat — a silent watcher hid a missed sale once; never again
     console.log(
       `Sold-sync pass: ${relevant.filter((i) => i.status === "listed").length} listed items, ` +
-        `${ebaySoldUnits.size} eBay listings with recent sales, ${reverbSold.size} Reverb sold ids.`
+        `${ebaySoldUnits.size} eBay listings with recent sales, ${reverbSold.ids.size} Reverb sold ids.`
     );
-    if (ebaySoldUnits.size === 0 && reverbSold.size === 0) return;
+    if (ebaySoldUnits.size === 0 && reverbSold.ids.size === 0) return;
 
     // Group by shared eBay listing; items without one stand alone
     const groups = new Map<string, any[]>();
@@ -228,7 +280,7 @@ async function syncOnce(): Promise<void> {
         status: i.status,
         rid: reverbIdFromUrl(i.reverb_url),
       }));
-      const plan = planGroupSync(members, eid ? ebaySoldUnits.get(eid) || 0 : 0, reverbSold);
+      const plan = planGroupSync(members, eid ? ebaySoldUnits.get(eid) || 0 : 0, reverbSold.ids);
       if (plan.markSoldViaReverb.length === 0 && plan.markSoldViaEbay.length === 0) continue;
 
       const byId = new Map(groupItems.map((i) => [i.id, i]));
@@ -239,8 +291,9 @@ async function syncOnce(): Promise<void> {
         console.log(`SOLD on eBay: "${byId.get(m.id)?.title}" — syncing Reverb.`);
         const endedOk = m.rid ? await endReverbListing(m.rid) : true;
         if (endedOk) {
-          await callCloud({ action: "update", id: m.id, status: "sold" }).catch((err) =>
-            console.error("Sold-sync: couldn't mark item sold in inventory:", err)
+          const facts = eid ? ebaySold.facts.get(eid) : undefined;
+          await callCloud({ action: "update", id: m.id, status: "sold", ...(facts || {}) }).catch(
+            (err) => console.error("Sold-sync: couldn't mark item sold in inventory:", err)
           );
         }
       }
@@ -259,12 +312,28 @@ async function syncOnce(): Promise<void> {
         for (const m of plan.markSoldViaReverb) {
           console.log(`SOLD on Reverb: "${byId.get(m.id)?.title}" — syncing eBay.`);
           if (ebayOk) {
-            await callCloud({ action: "update", id: m.id, status: "sold" }).catch((err) =>
-              console.error("Sold-sync: couldn't mark item sold in inventory:", err)
+            const facts = reverbSold.facts.get(m.rid);
+            await callCloud({ action: "update", id: m.id, status: "sold", ...(facts || {}) }).catch(
+              (err) => console.error("Sold-sync: couldn't mark item sold in inventory:", err)
             );
           }
         }
       }
+    }
+
+    // Backfill: items already marked sold whose money facts are missing (sales
+    // that happened before this feature existed, or while the cloud lacked the
+    // columns) get their order details written in once we can see them.
+    for (const item of relevant) {
+      if (item.status !== "sold" || item.sold_price != null) continue;
+      const rid = reverbIdFromUrl(item.reverb_url);
+      const eid = ebayItemIdFromUrl(item.ebay_url);
+      const facts = (rid && reverbSold.facts.get(rid)) || (eid && ebaySold.facts.get(eid)) || null;
+      if (!facts || facts.sold_price == null) continue;
+      console.log(`Sold-sync: backfilling sale details for "${item.title}".`);
+      await callCloud({ action: "update", id: item.id, ...facts }).catch((err) =>
+        console.error("Sold-sync: backfill failed:", err)
+      );
     }
   } finally {
     running = false;

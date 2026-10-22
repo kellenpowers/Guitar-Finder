@@ -1,6 +1,40 @@
 import { describe, it, expect } from "vitest";
 import { planGroupSync, reverbOrderListingId, type GroupMember } from "../services/sold-sync.js";
 
+describe("sale facts extraction", () => {
+  it("reads Reverb order money fields defensively", async () => {
+    const { reverbOrderFacts } = await import("../services/sold-sync.js");
+    const facts = reverbOrderFacts({
+      order_number: "26600001",
+      amount_product: { amount: "79.00", currency: "USD" },
+      shipping: { amount: "15.00" },
+      paid_at: "2026-10-21T14:00:00Z",
+    });
+    expect(facts.sold_price).toBe(79);
+    expect(facts.sold_shipping).toBe(15);
+    expect(facts.sold_fees).toBeNull(); // not in payload — stays blank, never guessed
+    expect(facts.sold_order).toBe("26600001");
+    expect(facts.sold_on).toBe("reverb");
+  });
+
+  it("reads eBay line facts, attributing shipping only on single-line orders", async () => {
+    const { ebayLineFacts } = await import("../services/sold-sync.js");
+    const order = {
+      orderId: "12-34567-89012",
+      creationDate: "2026-10-21T15:00:00Z",
+      pricingSummary: { deliveryCost: { value: "12.50" } },
+      lineItems: [{ legacyItemId: "840045357106", quantity: 2, lineItemCost: { value: "338.00" } }],
+    };
+    const facts = ebayLineFacts(order, order.lineItems[0]);
+    expect(facts.sold_price).toBe(169); // per unit
+    expect(facts.sold_shipping).toBe(12.5);
+    expect(facts.sold_on).toBe("ebay");
+    // multi-line order: shipping can't be attributed to one line
+    const multi = { ...order, lineItems: [order.lineItems[0], { legacyItemId: "x", quantity: 1 }] };
+    expect(ebayLineFacts(multi, multi.lineItems[0]).sold_shipping).toBeNull();
+  });
+});
+
 describe("reverbOrderListingId (order payload shapes)", () => {
   it("reads the listing id from any known field", () => {
     expect(reverbOrderListingId({ product_id: 102834010 })).toBe("102834010");

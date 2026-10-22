@@ -64,7 +64,11 @@ Deno.serve(async (req: Request) => {
 
   if (action === "update") {
     const allowed: Record<string, unknown> = {};
-    for (const key of ["title", "status", "bought_price", "target_price", "listing_draft", "photos", "video_url"]) {
+    for (const key of [
+      "title", "status", "bought_price", "target_price", "listing_draft", "photos", "video_url",
+      // Sale money facts, written by the Mac's sold-sync from the platform order
+      "sold_price", "sold_shipping", "sold_fees", "sold_payout", "sold_at", "sold_order", "sold_on",
+    ]) {
       if (key in body) allowed[key] = body[key];
     }
     allowed.updated_at = new Date().toISOString();

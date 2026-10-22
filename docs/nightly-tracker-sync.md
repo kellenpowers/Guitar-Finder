@@ -27,14 +27,26 @@ run; the schedule's stored prompt mirrors it.
   estimates). Never touch formula cells; when adding a row, copy the formula
   pattern from an existing row if practical, otherwise leave them empty.
 
+## Sale money facts
+
+When an item sells, the Mac records the order's details on the inventory row:
+`sold_price`, `sold_shipping`, `sold_fees`, `sold_payout`, `sold_at`,
+`sold_order`, `sold_on` (reverb/ebay). Write these into the sheet's SALE
+columns (Date Sold, Sale Price, Shipping Collected, Order #; fees/payout only
+when present). A null field stays blank in the sheet — never estimate money
+numbers into the ledger.
+
 ## What to sync
 
 - Match inventory items to sheet rows by Reverb listing number (digits in
   `reverb_url`), else eBay item number (digits in `ebay_url`), else exact
   title.
 - Matched rows: update Status (listed → "Listed", sold → "Sold"), record the
-  eBay link if a listing exists and isn't noted, update the list price if the
-  app clearly shows a different current target.
+  eBay link if a listing exists and isn't noted (the "eBay Link" column added
+  at the sheet's right edge is the home for these), update the list price if
+  the app clearly shows a different current target, and fill an EMPTY
+  Cost/Basis cell from the app's bought_price when the owner has entered one —
+  still never overwrite a non-empty owner cell.
 - Unmatched inventory items: append a new row with Item (title), Source
   "Flip Finder app", Date Acquired (created_at date), Cost/Basis
   (bought_price if set), Status, List Price (target_price), and the
