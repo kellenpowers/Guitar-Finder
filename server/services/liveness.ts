@@ -1,5 +1,6 @@
 import { getDb } from "../db/index.js";
 import { facebookScraper } from "../scrapers/facebook.js";
+import { getEbayAppToken } from "../scrapers/ebay.js";
 
 // Marketplace listings go stale: a flip found Monday sells Wednesday, and
 // nothing ever told us. Each sweep re-checks a few of the most valuable,
@@ -15,6 +16,10 @@ export const FAST_SOURCE_FRESH_DAYS = 2;
 // are cheap plain fetches; Facebook ones open real pages, so stay moderate.
 const CL_CHECKS_PER_SWEEP = 20;
 const FB_CHECKS_PER_SWEEP = 12;
+// eBay and Reverb are checked through their OFFICIAL APIs — no scraping, so
+// the caps can be generous
+const EBAY_CHECKS_PER_SWEEP = 40;
+const REVERB_CHECKS_PER_SWEEP = 20;
 const RECHECK_HOURS = 12; // don't re-visit the same listing more often than this
 // Prioritize re-checking what the Dashboard actually shows: items whose value
 // clears roughly the margin doctrine (profit ≈ price). Others go later.
@@ -43,12 +48,45 @@ export function facebookGone(pageText: string): boolean {
     .some((l) => /^(sold|pending|sale pending)$/i.test(l.trim()));
 }
 
+// Ask eBay's Browse API whether a listing is still live. true = gone,
+// false = live, null = couldn't tell (leave the listing alone).
+async function ebayGoneByApi(legacyId: string, token: string): Promise<boolean | null> {
+  const res = await fetch(
+    `https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=${encodeURIComponent(legacyId)}`,
+    { headers: { Authorization: `Bearer ${token}`, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" } }
+  );
+  if (res.status === 404) return true;
+  if (!res.ok) return null;
+  const item = await res.json().catch(() => null);
+  if (!item) return null;
+  const availability = item?.estimatedAvailabilities?.[0]?.estimatedAvailabilityStatus;
+  if (availability === "OUT_OF_STOCK") return true;
+  if (item?.itemEndDate && Date.parse(item.itemEndDate) < Date.now()) return true;
+  return false;
+}
+
+async function reverbGoneByApi(listingId: string, token: string): Promise<boolean | null> {
+  const res = await fetch(`https://api.reverb.com/api/listings/${encodeURIComponent(listingId)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/hal+json",
+      "Accept-Version": "3.0",
+    },
+  });
+  if (res.status === 404) return true;
+  if (!res.ok) return null;
+  const listing = await res.json().catch(() => null);
+  const slug = listing?.state?.slug ?? listing?.state;
+  if (!slug) return null;
+  return String(slug) !== "live";
+}
+
 export async function checkListingLiveness(): Promise<void> {
   const db = getDb();
   const candidates = (source: string, limit: number) =>
     db
       .prepare(
-        `SELECT l.id, l.source, l.listing_url, l.price,
+        `SELECT l.id, l.source, l.listing_url, l.external_id, l.price,
           COALESCE((SELECT MAX(estimated_market_value) FROM market_prices WHERE listing_id = l.id), 0) AS value
         FROM listings l
         WHERE l.delisted_at IS NULL
@@ -59,10 +97,9 @@ export async function checkListingLiveness(): Promise<void> {
           value DESC
         LIMIT ${limit}`
       )
-      .all(source) as Array<{ id: number; source: string; listing_url: string }>;
+      .all(source) as Array<{ id: number; source: string; listing_url: string; external_id: string }>;
 
   const rows = [...candidates("craigslist", CL_CHECKS_PER_SWEEP), ...candidates("facebook", FB_CHECKS_PER_SWEEP)];
-  if (rows.length === 0) return;
 
   const touch = db.prepare("UPDATE listings SET live_checked_at = datetime('now') WHERE id = ?");
   const retire = db.prepare(
@@ -100,6 +137,42 @@ export async function checkListingLiveness(): Promise<void> {
       } else {
         touch.run(row.id);
       }
+    }
+  }
+
+  // eBay via the official Browse API — ended/sold items vanish within a sweep
+  const ebayRows = candidates("ebay", EBAY_CHECKS_PER_SWEEP);
+  if (ebayRows.length > 0 && process.env.EBAY_CLIENT_ID && process.env.EBAY_CLIENT_SECRET) {
+    try {
+      const token = await getEbayAppToken();
+      for (const row of ebayRows) {
+        const gone = await ebayGoneByApi(row.external_id, token).catch(() => null);
+        if (gone === true) {
+          retire.run(row.id);
+          retired++;
+        } else if (gone === false) {
+          touch.run(row.id);
+        }
+        await delay(150, 400);
+      }
+    } catch (err) {
+      console.warn("Liveness: eBay API check failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Reverb via its official API
+  const reverbRows = candidates("reverb", REVERB_CHECKS_PER_SWEEP);
+  const reverbToken = process.env.REVERB_API_TOKEN;
+  if (reverbRows.length > 0 && reverbToken) {
+    for (const row of reverbRows) {
+      const gone = await reverbGoneByApi(row.external_id, reverbToken).catch(() => null);
+      if (gone === true) {
+        retire.run(row.id);
+        retired++;
+      } else if (gone === false) {
+        touch.run(row.id);
+      }
+      await delay(300, 700);
     }
   }
 
