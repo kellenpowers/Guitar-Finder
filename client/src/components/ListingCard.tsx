@@ -7,6 +7,7 @@ import { getPasscode, setPasscode } from "../api";
 import { copyText } from "../lib/clipboard";
 
 interface ListingCardProps {
+  onIgnore?: (id: number) => void;
   listing: {
     id: number;
     title: string;
@@ -91,7 +92,7 @@ const VALUE_SOURCE_LABELS: Record<string, string> = {
   reverb_asking: "Reverb asking",
 };
 
-export default function ListingCard({ listing }: ListingCardProps) {
+export default function ListingCard({ listing, onIgnore }: ListingCardProps) {
   const [showComps, setShowComps] = useState(false);
   const [comps, setComps] = useState<Comparable[] | null>(null);
   const [compsSource, setCompsSource] = useState<string>("");
@@ -253,6 +254,18 @@ export default function ListingCard({ listing }: ListingCardProps) {
                   className="text-xs text-indigo-600 hover:underline"
                 >
                   See comps
+                </button>
+              )}
+              {onIgnore && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onIgnore(listing.id);
+                  }}
+                  className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200"
+                >
+                  Ignore
                 </button>
               )}
             </div>
