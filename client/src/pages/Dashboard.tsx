@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ListingCard from "../components/ListingCard";
-import { api, isCloud, getSnapshotUpdatedAt } from "../api";
+import { api, isCloud, getSnapshotUpdatedAt, getPasscode, setPasscode } from "../api";
 import { meetsMarginTarget, BASE_MARGIN, SMALL_ITEM_MARGIN, MARGIN_BREAKPOINT } from "../lib/economics";
+import { fetchIgnores, ignoreListing, unignoreListing } from "../lib/inventory";
 
 function updatedAgo(): string | null {
   const ts = getSnapshotUpdatedAt();
@@ -53,14 +54,26 @@ function groupByTrip(listings: any[]): TripGroup[] {
   return [...groups.values()].sort((a, b) => b.totalProfit - a.totalProfit);
 }
 
+const SORTS: Array<{ value: string; label: string }> = [
+  { value: "flip", label: "Flip Score" },
+  { value: "profit", label: "Profit" },
+  { value: "score", label: "% Below Market" },
+  { value: "price", label: "Price (low first)" },
+  { value: "recent", label: "Newest" },
+];
+
 export default function Dashboard() {
   const [allListings, setAllListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [view, setView] = useState<"top" | "trips">("top");
+  const [sortBy, setSortBy] = useState("flip");
+  const [ignored, setIgnored] = useState<Set<string>>(new Set());
+  const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
-    api("/api/listings?sortBy=flip")
+    setLoading(true);
+    api(`/api/listings?sortBy=${sortBy}`)
       .then((r) => r.json())
       .then((listingsData) => {
         setAllListings(listingsData);
@@ -70,7 +83,43 @@ export default function Dashboard() {
         setError(true);
         setLoading(false);
       });
+  }, [sortBy]);
+
+  useEffect(() => {
+    fetchIgnores().then(setIgnored).catch(() => {});
   }, []);
+
+  function ensurePasscode(): boolean {
+    if (getPasscode()) return true;
+    const code = prompt("Enter your Flip Finder passcode (same as the phone app):");
+    if (!code) return false;
+    setPasscode(code);
+    return true;
+  }
+
+  async function handleIgnore(id: number) {
+    if (!ensurePasscode()) return;
+    setIgnored((prev) => new Set(prev).add(String(id)));
+    try {
+      await ignoreListing(id);
+    } catch {
+      setIgnored((prev) => {
+        const next = new Set(prev);
+        next.delete(String(id));
+        return next;
+      });
+      alert("Couldn't save the ignore — check your connection (or the passcode) and try again.");
+    }
+  }
+
+  async function handleRestore(id: number) {
+    setIgnored((prev) => {
+      const next = new Set(prev);
+      next.delete(String(id));
+      return next;
+    });
+    await unignoreListing(id).catch(() => {});
+  }
 
   if (loading) {
     return <div className="text-center py-12 text-gray-500">Loading...</div>;
@@ -87,9 +136,13 @@ export default function Dashboard() {
     );
   }
 
-  const flips = allListings.filter(meetsMarginTarget);
-  const valuedCount = allListings.filter((l) => l.estimated_market_value != null).length;
-  const trips = groupByTrip(allListings);
+  const visible = allListings.filter((l) => !ignored.has(String(l.id)));
+  const flips = visible.filter(meetsMarginTarget);
+  const ignoredFlips = allListings.filter(
+    (l) => ignored.has(String(l.id)) && meetsMarginTarget(l)
+  );
+  const valuedCount = visible.filter((l) => l.estimated_market_value != null).length;
+  const trips = groupByTrip(visible);
 
   return (
     <div>
@@ -107,19 +160,34 @@ export default function Dashboard() {
             )}
           </p>
         </div>
-        <div className="flex rounded-lg border overflow-hidden text-sm">
-          <button
-            onClick={() => setView("top")}
-            className={`px-3 py-1.5 ${view === "top" ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-          >
-            Top Flips
-          </button>
-          <button
-            onClick={() => setView("trips")}
-            className={`px-3 py-1.5 ${view === "trips" ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-          >
-            By Trip
-          </button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {view === "top" && (
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="text-sm border rounded-lg px-2 py-1.5 bg-white text-gray-700"
+            >
+              {SORTS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  Sort: {s.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="flex rounded-lg border overflow-hidden text-sm">
+            <button
+              onClick={() => setView("top")}
+              className={`px-3 py-1.5 ${view === "top" ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              Top Flips
+            </button>
+            <button
+              onClick={() => setView("trips")}
+              className={`px-3 py-1.5 ${view === "trips" ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              By Trip
+            </button>
+          </div>
         </div>
       </div>
 
@@ -157,7 +225,7 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-3">
             {flips.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
+              <ListingCard key={listing.id} listing={listing} onIgnore={handleIgnore} />
             ))}
           </div>
         )
@@ -188,11 +256,37 @@ export default function Dashboard() {
               </div>
               <div className="space-y-3">
                 {trip.listings.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} />
+                  <ListingCard key={listing.id} listing={listing} onIgnore={handleIgnore} />
                 ))}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {view === "top" && ignoredFlips.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowIgnored(!showIgnored)}
+            className="text-sm text-gray-400 hover:text-gray-600"
+          >
+            {showIgnored ? "Hide" : "Show"} ignored ({ignoredFlips.length})
+          </button>
+          {showIgnored && (
+            <div className="space-y-3 mt-3 opacity-60">
+              {ignoredFlips.map((listing) => (
+                <div key={listing.id} className="relative">
+                  <ListingCard listing={listing} />
+                  <button
+                    onClick={() => handleRestore(listing.id)}
+                    className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-white border text-gray-600 hover:bg-gray-50"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -108,6 +108,21 @@ export interface IdentifyResult {
   error?: string;
 }
 
+// Ignored marketplace finds — "not interested", synced across devices via the
+// cloud so a dismissal on the phone also hides it on the Mac.
+export async function fetchIgnores(): Promise<Set<string>> {
+  const data = await call("POST", { action: "ignores" });
+  return new Set<string>((data.keys || []).map(String));
+}
+
+export async function ignoreListing(key: string | number): Promise<void> {
+  await call("POST", { action: "ignore", key: String(key) });
+}
+
+export async function unignoreListing(key: string | number): Promise<void> {
+  await call("POST", { action: "unignore", key: String(key) });
+}
+
 // Would Reverb list this? Reverb is music gear only — cameras, consoles and
 // couches go eBay-only. Decides the default platform toggles; the owner can
 // always flip them.

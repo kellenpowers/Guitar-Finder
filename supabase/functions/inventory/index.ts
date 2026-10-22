@@ -96,6 +96,28 @@ Deno.serve(async (req: Request) => {
     return json({ path, signedUrl: data.signedUrl, token: data.token });
   }
 
+  // Ignored marketplace finds — synced across the owner's devices
+  if (action === "ignores") {
+    const { data, error } = await supabase.from("ignores").select("key");
+    if (error) return json({ error: error.message }, 500);
+    return json({ keys: (data || []).map((r: any) => r.key) });
+  }
+
+  if (action === "ignore") {
+    const key = String(body.key || "").slice(0, 100);
+    if (!key) return json({ error: "missing key" }, 400);
+    const { error } = await supabase.from("ignores").upsert({ key });
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true });
+  }
+
+  if (action === "unignore") {
+    const key = String(body.key || "");
+    const { error } = await supabase.from("ignores").delete().eq("key", key);
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true });
+  }
+
   if (action === "queue") {
     const kind = String(body.kind || "");
     if (!["list_reverb", "list_ebay", "import_reverb", "identify_item", "manage_search"].includes(kind)) return json({ error: "unknown command" }, 400);
