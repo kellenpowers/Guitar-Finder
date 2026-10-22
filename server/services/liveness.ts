@@ -8,8 +8,17 @@ import { facebookScraper } from "../scrapers/facebook.js";
 
 // ===== Liveness tunables =====
 export const FRESH_FLIP_DAYS = 4; // flips older than this stop showing as buyable
-const CHECKS_PER_SWEEP = 8; // polite: a handful of re-checks per hourly sweep
+// Facebook/OfferUp deals die in hours, not days — show them for less time
+export const FAST_SOURCE_FRESH_DAYS = 2;
+// Re-check caps per hourly sweep (raised at the owner's request, Oct 2026 —
+// too many dead listings were slipping through at 8/sweep). Craigslist checks
+// are cheap plain fetches; Facebook ones open real pages, so stay moderate.
+const CL_CHECKS_PER_SWEEP = 20;
+const FB_CHECKS_PER_SWEEP = 12;
 const RECHECK_HOURS = 12; // don't re-visit the same listing more often than this
+// Prioritize re-checking what the Dashboard actually shows: items whose value
+// clears roughly the margin doctrine (profit ≈ price). Others go later.
+const LIKELY_FLIP_VALUE_RATIO = 1.8;
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -36,19 +45,23 @@ export function facebookGone(pageText: string): boolean {
 
 export async function checkListingLiveness(): Promise<void> {
   const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT l.id, l.source, l.listing_url,
-        COALESCE((SELECT MAX(estimated_market_value) FROM market_prices WHERE listing_id = l.id), 0) AS value
-      FROM listings l
-      WHERE l.delisted_at IS NULL
-        AND l.source IN ('facebook', 'craigslist')
-        AND datetime(l.scraped_at) >= datetime('now', '-${FRESH_FLIP_DAYS} days')
-        AND (l.live_checked_at IS NULL OR datetime(l.live_checked_at) <= datetime('now', '-${RECHECK_HOURS} hours'))
-      ORDER BY value DESC
-      LIMIT ${CHECKS_PER_SWEEP}`
-    )
-    .all() as Array<{ id: number; source: string; listing_url: string }>;
+  const candidates = (source: string, limit: number) =>
+    db
+      .prepare(
+        `SELECT l.id, l.source, l.listing_url, l.price,
+          COALESCE((SELECT MAX(estimated_market_value) FROM market_prices WHERE listing_id = l.id), 0) AS value
+        FROM listings l
+        WHERE l.delisted_at IS NULL
+          AND l.source = ?
+          AND datetime(l.scraped_at) >= datetime('now', '-${FRESH_FLIP_DAYS} days')
+          AND (l.live_checked_at IS NULL OR datetime(l.live_checked_at) <= datetime('now', '-${RECHECK_HOURS} hours'))
+        ORDER BY (CASE WHEN value >= ${LIKELY_FLIP_VALUE_RATIO} * MAX(l.price, 1) THEN 1 ELSE 0 END) DESC,
+          value DESC
+        LIMIT ${limit}`
+      )
+      .all(source) as Array<{ id: number; source: string; listing_url: string }>;
+
+  const rows = [...candidates("craigslist", CL_CHECKS_PER_SWEEP), ...candidates("facebook", FB_CHECKS_PER_SWEEP)];
   if (rows.length === 0) return;
 
   const touch = db.prepare("UPDATE listings SET live_checked_at = datetime('now') WHERE id = ?");
