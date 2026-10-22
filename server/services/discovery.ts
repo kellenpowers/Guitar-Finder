@@ -142,6 +142,9 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
     const { valued, networkLookups } = await valueUnvalued(searchId);
 
     await applySellerNames().catch((err) => console.error("Seller-name pass failed:", err));
+    // Retire listings that already sold or vanished since we found them
+    const { checkListingLiveness } = await import("./liveness.js");
+    await checkListingLiveness().catch((err) => console.error("Liveness check failed:", err));
     await publishSnapshot();
 
     console.log(

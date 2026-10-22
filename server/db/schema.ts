@@ -137,6 +137,13 @@ function migrateValueSource(db: Database.Database): void {
     // null = not looked up yet, '' = looked up and not found
     db.exec("ALTER TABLE listings ADD COLUMN seller_name TEXT");
   }
+  if (!listingCols.some((c) => c.name === "delisted_at")) {
+    // Set when a re-check finds the marketplace listing gone (sold/removed)
+    db.exec("ALTER TABLE listings ADD COLUMN delisted_at TEXT");
+  }
+  if (!listingCols.some((c) => c.name === "live_checked_at")) {
+    db.exec("ALTER TABLE listings ADD COLUMN live_checked_at TEXT");
+  }
   if (!listingCols.some((c) => c.name === "drive_minutes")) {
     db.exec("ALTER TABLE listings ADD COLUMN drive_minutes REAL");
     // Old distances were straight-line; null them so the next pass recomputes
