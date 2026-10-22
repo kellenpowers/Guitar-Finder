@@ -89,6 +89,7 @@ interface Comparable {
 const VALUE_SOURCE_LABELS: Record<string, string> = {
   reverb_price_guide: "Reverb sales",
   ebay_sold: "eBay sold",
+  ebay_asking: "eBay asking, adjusted",
   reverb_asking: "Reverb asking",
 };
 

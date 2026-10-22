@@ -3,7 +3,7 @@ import {
   checkReverbAskingPrices,
   type PriceCheckResult,
 } from "./reverb-checker.js";
-import { fetchEbaySoldEstimate } from "../scrapers/ebay.js";
+import { fetchEbaySoldEstimate, fetchEbayAskingEstimate } from "../scrapers/ebay.js";
 import { normalizeQuery } from "./relevance.js";
 import { getDb } from "../db/index.js";
 
@@ -20,15 +20,21 @@ export interface ValuationOutcome {
 }
 
 // Market value estimate, most-verifiable signal first:
-// 1. eBay sold listings median (real sales, relevance-checked, any category)
-// 2. Reverb price guide (real Reverb sales, relevance-guarded — music gear)
-// 3. Reverb asking prices (relevance-checked, but asking != selling) — last resort
+// 1. eBay sold listings median (real sales — currently unavailable: scrape is
+//    bot-blocked and Marketplace Insights was declined)
+// 2. Reverb price guide (real Reverb sales — needs API entitlement)
+// 3. eBay asking prices via the official Browse API (relevance-checked,
+//    outlier-trimmed, with a sell-below-ask haircut) — any category
+// 4. Reverb asking prices (relevance-checked, raw ask) — last resort
 async function estimateFresh(query: string): Promise<PriceCheckResult | null> {
   const sold = await fetchEbaySoldEstimate(query).catch(() => null);
   if (sold) return sold;
 
   const guide = await checkReverbPriceGuide(query);
   if (guide) return guide;
+
+  const ebayAsk = await fetchEbayAskingEstimate(query);
+  if (ebayAsk) return ebayAsk;
 
   return checkReverbAskingPrices(query);
 }

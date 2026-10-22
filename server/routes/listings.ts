@@ -28,6 +28,7 @@ const FLIP_SCORE_EXPR = `
           ${W_CONFIDENCE} * (CASE mp.value_source
                              WHEN 'ebay_sold' THEN ${SOURCE_CONFIDENCE.ebay_sold}
                              WHEN 'reverb_price_guide' THEN ${SOURCE_CONFIDENCE.reverb_price_guide}
+                             WHEN 'ebay_asking' THEN ${SOURCE_CONFIDENCE.ebay_asking}
                              WHEN 'reverb_asking' THEN ${SOURCE_CONFIDENCE.reverb_asking}
                              ELSE ${SOURCE_CONFIDENCE_DEFAULT} END) +
           ${W_DISTANCE} * ${DISTANCE_EXPR}

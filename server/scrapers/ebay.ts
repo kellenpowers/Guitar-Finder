@@ -100,6 +100,64 @@ async function browseSearch(options: ScraperOptions): Promise<ScrapedListing[]> 
   return listings;
 }
 
+// ===== eBay asking-price valuation (tunables) =====
+// Sold-price data is off the table (the scrape is bot-blocked and eBay
+// declined Marketplace Insights access), so CURRENT asking prices from the
+// official Browse API are the best eBay signal. Things sell below ask, so
+// the estimate takes a haircut.
+const ASKING_TO_SOLD_HAIRCUT = 0.9;
+const ASKING_MIN_COMPS = 3;
+
+// Estimate market value from current eBay asking prices (official API):
+// relevance-filtered, outlier-trimmed median, then the haircut.
+export async function fetchEbayAskingEstimate(
+  query: string
+): Promise<import("../services/reverb-checker.js").PriceCheckResult | null> {
+  if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) return null;
+  try {
+    const { filterRelevant } = await import("../services/relevance.js");
+    const { trimOutliers, median } = await import("../services/stats.js");
+    const token = await getEbayAppToken();
+    // Default (best match) sort — relevance matters more than freshness here
+    const params = new URLSearchParams({
+      q: query,
+      limit: "50",
+      filter: "buyingOptions:{FIXED_PRICE},priceCurrency:USD",
+    });
+    const res = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${token}`, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" } }
+    );
+    if (!res.ok) throw new Error(`Browse API ${res.status}`);
+    const items = (await res.json())?.itemSummaries || [];
+
+    const all = items
+      .map((i: any) => ({
+        title: String(i?.title || ""),
+        price: parseFloat(i?.price?.value || "0"),
+        condition: String(i?.condition || "Unknown"),
+        url: String(i?.itemWebUrl || ""),
+      }))
+      .filter((c: any) => c.title && c.price > 0);
+
+    const comparables = filterRelevant(query, all).slice(0, 10);
+    const prices = trimOutliers(comparables.map((c: any) => c.price));
+    if (prices.length < ASKING_MIN_COMPS) return null;
+
+    const med = median(prices);
+    if (med == null) return null;
+
+    return {
+      estimatedValue: Math.round(med * ASKING_TO_SOLD_HAIRCUT),
+      comparables,
+      source: "ebay_asking",
+    };
+  } catch (err) {
+    console.error(`eBay asking-price check failed for "${query}":`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 // eBay's search results page needs no login, but eBay blocks plain HTTP
 // fetches (403), so pages are loaded through the shared headless browser.
 
