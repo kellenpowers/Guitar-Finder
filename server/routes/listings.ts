@@ -7,6 +7,7 @@ import {
   DRIVE_NEAR_MINUTES, DRIVE_FAR_MINUTES, DISTANCE_UNKNOWN,
   SOURCE_CONFIDENCE, SOURCE_CONFIDENCE_DEFAULT,
 } from "../services/flip-score.js";
+import { FRESH_FLIP_DAYS } from "../services/liveness.js";
 
 const router = Router();
 
@@ -36,7 +37,7 @@ const FLIP_SCORE_EXPR = `
 
 router.get("/", (req, res) => {
   const db = getDb();
-  const { searchId, source, minScore, sortBy, includeComps } = req.query;
+  const { searchId, source, minScore, sortBy, includeComps, all } = req.query;
 
   let sql = `
     SELECT l.*,
@@ -66,6 +67,13 @@ router.get("/", (req, res) => {
     WHERE 1=1
   `;
   const params: unknown[] = [];
+
+  // By default only show buyable finds: recent and not known to be gone.
+  // (Local flips sell fast — a days-old find is stale even if we never saw it
+  // sell.) ?all=1 keeps the full archive for the All Listings page.
+  if (!all) {
+    sql += ` AND l.delisted_at IS NULL AND datetime(l.scraped_at) >= datetime('now', '-${FRESH_FLIP_DAYS} days')`;
+  }
 
   if (searchId) {
     sql += " AND l.search_id = ?";

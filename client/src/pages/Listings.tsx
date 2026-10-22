@@ -12,6 +12,7 @@ export default function Listings() {
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
+    params.set("all", "1"); // the archive view — Dashboard shows only fresh, live finds
     if (sortBy) params.set("sortBy", sortBy);
     if (source) params.set("source", source);
     if (minScore) params.set("minScore", minScore);
