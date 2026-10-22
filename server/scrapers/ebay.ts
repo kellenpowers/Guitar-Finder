@@ -131,7 +131,7 @@ export async function fetchEbayAskingEstimate(
     if (!res.ok) throw new Error(`Browse API ${res.status}`);
     const items = (await res.json())?.itemSummaries || [];
 
-    const all = items
+    const all: import("../services/reverb-checker.js").ReverbComparable[] = items
       .map((i: any) => ({
         title: String(i?.title || ""),
         price: parseFloat(i?.price?.value || "0"),
