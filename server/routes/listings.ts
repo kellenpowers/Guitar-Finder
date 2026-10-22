@@ -7,7 +7,7 @@ import {
   DRIVE_NEAR_MINUTES, DRIVE_FAR_MINUTES, DISTANCE_UNKNOWN,
   SOURCE_CONFIDENCE, SOURCE_CONFIDENCE_DEFAULT,
 } from "../services/flip-score.js";
-import { FRESH_FLIP_DAYS } from "../services/liveness.js";
+import { FRESH_FLIP_DAYS, FAST_SOURCE_FRESH_DAYS } from "../services/liveness.js";
 
 const router = Router();
 
@@ -73,7 +73,8 @@ router.get("/", (req, res) => {
   // (Local flips sell fast — a days-old find is stale even if we never saw it
   // sell.) ?all=1 keeps the full archive for the All Listings page.
   if (!all) {
-    sql += ` AND l.delisted_at IS NULL AND datetime(l.scraped_at) >= datetime('now', '-${FRESH_FLIP_DAYS} days')`;
+    sql += ` AND l.delisted_at IS NULL AND datetime(l.scraped_at) >= datetime('now', '-${FRESH_FLIP_DAYS} days')
+      AND (l.source NOT IN ('facebook', 'offerup') OR datetime(l.scraped_at) >= datetime('now', '-${FAST_SOURCE_FRESH_DAYS} days'))`;
   }
 
   if (searchId) {
