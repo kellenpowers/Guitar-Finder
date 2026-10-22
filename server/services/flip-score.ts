@@ -18,6 +18,7 @@ export const DISTANCE_UNKNOWN = 0.7; // shipped or unknown location
 export const SOURCE_CONFIDENCE: Record<string, number> = {
   ebay_sold: 1.0,
   reverb_price_guide: 0.8,
+  ebay_asking: 0.6, // current asks with a sell-below-ask haircut applied
   reverb_asking: 0.4,
 };
 export const SOURCE_CONFIDENCE_DEFAULT = 0.5;
