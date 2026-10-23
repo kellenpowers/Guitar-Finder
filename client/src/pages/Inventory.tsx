@@ -496,7 +496,7 @@ export default function Inventory() {
                   >
                     eBay ✓ live
                   </a>
-                ) : (
+                ) : item.status === "sold" ? null : (
                   <label className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-gray-700 border rounded cursor-pointer">
                     <input
                       type="checkbox"
@@ -520,7 +520,7 @@ export default function Inventory() {
                   >
                     Reverb ✓
                   </a>
-                ) : (
+                ) : item.status === "sold" ? null : (
                   <label className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-gray-700 border rounded cursor-pointer">
                     <input
                       type="checkbox"
@@ -535,7 +535,7 @@ export default function Inventory() {
                     Reverb
                   </label>
                 )}
-                {(!item.ebay_url || !item.reverb_url) && (
+                {item.status !== "sold" && (!item.ebay_url || !item.reverb_url) && (
                   <button
                     onClick={() => handleListIt(item)}
                     disabled={busyId === item.id}
