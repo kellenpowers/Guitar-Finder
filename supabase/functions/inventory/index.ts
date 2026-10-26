@@ -68,6 +68,8 @@ Deno.serve(async (req: Request) => {
       "title", "status", "bought_price", "target_price", "listing_draft", "photos", "video_url",
       // Sale money facts, written by the Mac's sold-sync from the platform order
       "sold_price", "sold_shipping", "sold_fees", "sold_payout", "sold_at", "sold_order", "sold_on",
+      // Repricing autopilot state + engagement, written by the Mac's repricer
+      "auto_reprice", "repriced_at", "initial_price", "views", "watches",
     ]) {
       if (key in body) allowed[key] = body[key];
     }
@@ -120,7 +122,7 @@ Deno.serve(async (req: Request) => {
 
   if (action === "queue") {
     const kind = String(body.kind || "");
-    if (!["list_reverb", "list_ebay", "import_reverb", "identify_item", "manage_search"].includes(kind)) return json({ error: "unknown command" }, 400);
+    if (!["list_reverb", "list_ebay", "import_reverb", "identify_item", "manage_search", "revise_price"].includes(kind)) return json({ error: "unknown command" }, 400);
     const { data, error } = await supabase
       .from("commands")
       .insert({ kind, payload: body.payload ?? {} })

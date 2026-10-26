@@ -18,6 +18,12 @@ export interface InventoryItem {
   ebay_url?: string | null;
   video_url?: string | null;
   created_at: string;
+  // Repricing autopilot state + engagement (written by the Mac's daily pass)
+  auto_reprice?: boolean;
+  repriced_at?: string | null;
+  initial_price?: number | null;
+  views?: number | null;
+  watches?: number | null;
 }
 
 async function call(method: "GET" | "POST", body?: Record<string, unknown>): Promise<any> {
@@ -212,6 +218,17 @@ export function photoUrl(path: string): string {
 
 export async function queueImportReverb(): Promise<void> {
   await call("POST", { action: "queue", kind: "import_reverb", payload: {} });
+}
+
+// Push a price change to every platform the item is live on (the Mac fee-
+// matches the eBay price and keeps multi-unit siblings in step)
+export async function queueRevisePrice(item: InventoryItem, price: number): Promise<string> {
+  const data = await call("POST", {
+    action: "queue",
+    kind: "revise_price",
+    payload: { inventory_id: item.id, target_price: price },
+  });
+  return data.command?.id || "";
 }
 
 export async function queueListOnEbay(item: InventoryItem): Promise<string> {

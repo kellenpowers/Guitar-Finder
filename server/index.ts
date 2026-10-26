@@ -25,6 +25,7 @@ import { startCommandRunner } from "./services/commands.js";
 import { consentUrl, exchangeConsentCode, ebayConnection } from "./services/ebay-auth.js";
 import { ebayWhoAmI } from "./services/ebay-lister.js";
 import { startSoldSync } from "./services/sold-sync.js";
+import { startRepricer } from "./services/repricer.js";
 import { getDb } from "./db/index.js";
 
 // Timestamp every log line — crash forensics are impossible without them
@@ -207,6 +208,10 @@ const server = app.listen(PORT, () => {
 
   // Don't-double-sell: watch both platforms, end the duplicate when one sells
   startSoldSync();
+
+  // Repricing autopilot: daily engagement-driven markdowns inside the margin
+  // floors (owner's standing authorization — CLAUDE.md rule 1)
+  startRepricer();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

@@ -251,6 +251,48 @@ export async function reviseEbayQuantity(
   return { ok: false, error };
 }
 
+// Change the asking price of a live listing (owner-tapped from the phone, or
+// the repricing autopilot inside its margin bounds — CLAUDE.md rule 1).
+export async function reviseEbayPrice(
+  itemId: string,
+  price: number
+): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
+  if (!(price > 0)) return { ok: false, error: "price must be above 0" };
+  const inner = `<Item><ItemID>${xmlEscape(itemId)}</ItemID><StartPrice>${price.toFixed(2)}</StartPrice></Item>`;
+  const response = await tradingCall("ReviseFixedPriceItem", inner);
+  const ack = response.match(/<Ack>([^<]*)<\/Ack>/)?.[1] || "";
+  if (ack === "Success" || ack === "Warning") {
+    console.log(`eBay listing ${itemId} price set to $${price.toFixed(2)}.`);
+    return { ok: true };
+  }
+  const error = tradingErrors(response);
+  // Ended or sold mid-flight: not an error to retry — sold-sync owns it
+  if (/alread|has ended|closed|was not found/i.test(error)) {
+    console.log(`eBay listing ${itemId} is no longer live — skipping its price change.`);
+    return { ok: false, gone: true, error };
+  }
+  console.error(`FAILED to change eBay listing ${itemId} price to $${price.toFixed(2)}: ${error}`);
+  return { ok: false, error };
+}
+
+// Engagement signal for the repricer: how many people watch this listing.
+// Null means "couldn't read it", never zero — zero is a real signal.
+export async function getEbayWatchCount(itemId: string): Promise<number | null> {
+  try {
+    const inner = `<ItemID>${xmlEscape(itemId)}</ItemID>
+  <IncludeWatchCount>true</IncludeWatchCount>
+  <OutputSelector>Item.WatchCount</OutputSelector>
+  <OutputSelector>Ack</OutputSelector>`;
+    const response = await tradingCall("GetItem", inner);
+    const ack = response.match(/<Ack>([^<]*)<\/Ack>/)?.[1] || "";
+    if (ack !== "Success" && ack !== "Warning") return null;
+    const m = response.match(/<WatchCount>(\d+)<\/WatchCount>/);
+    return m ? Number(m[1]) : 0; // a listing nobody watches omits the tag
+  } catch {
+    return null;
+  }
+}
+
 export async function endEbayListing(itemId: string): Promise<{ ok: boolean; error?: string }> {
   const inner = `<ItemID>${xmlEscape(itemId)}</ItemID>
   <EndingReason>NotAvailable</EndingReason>`;

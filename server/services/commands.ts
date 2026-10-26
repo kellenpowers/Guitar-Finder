@@ -145,6 +145,24 @@ async function runCommand(command: any): Promise<void> {
     return;
   }
 
+  // Owner-tapped price change: push the new price to both platforms (and any
+  // multi-unit siblings sharing the eBay listing). Floors bind the autopilot,
+  // not the owner — any price he taps in goes through.
+  if (command.kind === "revise_price") {
+    const { applyManualPrice } = await import("./repricer.js");
+    const result = await applyManualPrice(
+      String(payload.inventory_id || ""),
+      Number(payload.target_price)
+    );
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: result.ok ? "done" : "error",
+      result,
+    });
+    return;
+  }
+
   if (command.kind === "import_reverb") {
     const result = await importReverbListings();
     await callCloud({
