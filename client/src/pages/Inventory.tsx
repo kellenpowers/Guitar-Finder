@@ -28,6 +28,9 @@ export default function Inventory() {
   const [idResult, setIdResult] = useState<IdentifyResult | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Separate from busyId: "Pushing..." must only ever mean a price push is in
+  // flight, not that a photo upload happens to share the busy flag
+  const [pushingId, setPushingId] = useState<string | null>(null);
   // Which platforms to list on, per item. Defaults: eBay always, Reverb when
   // it's music gear (Reverb doesn't list cameras, consoles, furniture...).
   const [platformSel, setPlatformSel] = useState<Record<string, { ebay: boolean; reverb: boolean }>>({});
@@ -262,6 +265,7 @@ export default function Inventory() {
       .join(" and ");
     if (!confirm(`Set "${item.title}" to $${Math.round(price)} on ${where}?`)) return;
     setBusyId(item.id);
+    setPushingId(item.id);
     try {
       const id = await queueRevisePrice(item, price);
       const outcome = await waitForCommand(id);
@@ -269,15 +273,17 @@ export default function Inventory() {
       if (!outcome) {
         alert("The Mac hasn't finished yet — is it on? The change applies when it wakes.");
       } else if (outcome.status === "done") {
+        // Report what ACTUALLY changed (the Mac's result), not what the item's
+        // links suggest should have changed
         const r = outcome.result || {};
         const parts = [
-          item.reverb_url && `Reverb $${Math.round(price)}`,
-          r.ebay_price && `eBay $${r.ebay_price}`,
+          r.reverb_applied > 0 && `Reverb $${Math.round(price)}`,
+          r.ebay_price != null && `eBay $${r.ebay_price}`,
         ].filter(Boolean);
         const siblings = r.siblings
           ? ` Also updated ${r.siblings} matching unit${r.siblings > 1 ? "s" : ""}.`
           : "";
-        alert(`Done — ${parts.join(", ")}.${siblings}`);
+        alert(parts.length > 0 ? `Done — ${parts.join(", ")}.${siblings}` : "Done.");
       } else {
         alert(`Price change failed: ${outcome.error}`);
       }
@@ -289,6 +295,7 @@ export default function Inventory() {
       );
     }
     setBusyId(null);
+    setPushingId(null);
   }
 
   async function saveField(item: InventoryItem, fields: Partial<InventoryItem>) {
@@ -499,7 +506,7 @@ export default function Inventory() {
                       : "Views and watchers show up after the next daily check."}
                   </span>
                   {item.bought_price != null && item.bought_price > 0 ? (
-                    <span title="Lowest price that still clears your profit margin after fees">
+                    <span title="Lowest price that still clears your profit margin after fees. After 45 days unsold with no watchers, the autopilot may go below it — but never below breakeven on what you paid.">
                       Floor ${marginFloorPrice(item.bought_price, item.reverb_url ? "reverb" : "ebay")}
                     </span>
                   ) : (
@@ -507,11 +514,26 @@ export default function Inventory() {
                       No cost on file (bundle?) — estimated floor only. Add Paid $ for exact floors.
                     </span>
                   )}
-                  <label className="flex items-center gap-1 cursor-pointer" title="Daily automatic markdowns, never below the floor">
+                  <label
+                    className="flex items-center gap-1 cursor-pointer"
+                    title="Daily automatic markdowns. Holds your margin floor; after 45 days unsold it may go lower, but never below breakeven — a real loss is always your call."
+                  >
                     <input
                       type="checkbox"
                       checked={item.auto_reprice !== false}
-                      onChange={(e) => saveField(item, { auto_reprice: e.target.checked })}
+                      onChange={async (e) => {
+                        const on = e.target.checked;
+                        // Not saveField: if the cloud is out of date it silently
+                        // drops this field, and a pause the owner believes in
+                        // but that didn't stick would be the worst kind of lie
+                        const updated = await updateItem(item.id, { auto_reprice: on }).catch(() => null);
+                        if (updated && (updated.auto_reprice !== false) === on) {
+                          setItems((prev) => (prev || []).map((i) => (i.id === item.id ? updated : i)));
+                        } else {
+                          load();
+                          alert("Couldn't save the autopilot switch — the cloud needs a small update. Tell Claude.");
+                        }
+                      }}
                     />
                     Autopilot pricing
                   </label>
@@ -520,7 +542,7 @@ export default function Inventory() {
                     disabled={busyId === item.id}
                     className="px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    {busyId === item.id ? "Pushing..." : "Push price to platforms"}
+                    {pushingId === item.id ? "Pushing..." : "Push price to platforms"}
                   </button>
                 </div>
               )}

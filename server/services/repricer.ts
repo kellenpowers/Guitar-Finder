@@ -262,6 +262,7 @@ export async function applyManualPrice(
   ok: boolean;
   price?: number;
   ebay_price?: number | null;
+  reverb_applied?: number;
   siblings?: number;
   error?: string;
 }> {
@@ -277,14 +278,18 @@ export async function applyManualPrice(
     : [row];
   if (members.length === 0) members.push(row);
 
-  let anyApplied = false;
+  // Track what ACTUALLY changed — the phone reports from these, never from
+  // which links the item happens to carry (a drafts-page reverb_url has no
+  // listing id, and claiming "done" for it would be a lie).
+  let reverbApplied = 0;
+  let ebayApplied = false;
   const errors: string[] = [];
   for (const m of members) {
     const rid = reverbIdFromUrl(m.reverb_url);
     if (!rid) continue;
     try {
       const r = await updateReverbPrice(rid, price);
-      if (r.ok) anyApplied = true;
+      if (r.ok) reverbApplied++;
       else if (!r.gone) errors.push(`Reverb: ${r.error || "failed"}`);
     } catch (err) {
       errors.push(`Reverb: ${err instanceof Error ? err.message : "failed"}`);
@@ -294,15 +299,19 @@ export async function applyManualPrice(
   let ebayPrice: number | null = null;
   if (eid) {
     const hasReverb = members.some((m: Member) => m.reverb_url);
-    ebayPrice = ebayAskPrice(price, hasReverb);
+    const ask = ebayAskPrice(price, hasReverb);
     try {
-      const e = await reviseEbayPrice(eid, ebayPrice);
-      if (e.ok) anyApplied = true;
-      else if (!e.gone) errors.push(`eBay: ${e.error || "failed"}`);
+      const e = await reviseEbayPrice(eid, ask);
+      if (e.ok) {
+        ebayApplied = true;
+        ebayPrice = ask;
+      } else if (!e.gone) errors.push(`eBay: ${e.error || "failed"}`);
     } catch (err) {
       errors.push(`eBay: ${err instanceof Error ? err.message : "failed"}`);
     }
   }
+
+  const anyApplied = reverbApplied > 0 || ebayApplied;
 
   // Record the owner's price whenever anything changed, even partially —
   // otherwise the cloud would keep the old price and the next autopilot pass
@@ -320,7 +329,13 @@ export async function applyManualPrice(
     const where = anyApplied ? "Partly done — the rest failed. " : "";
     return { ok: false, error: `${where}${errors.join(" | ")}${anyApplied ? " Tap again to retry the failed platform." : ""}` };
   }
-  return { ok: true, price, ebay_price: ebayPrice, siblings: members.length - 1 };
+  if (!anyApplied) {
+    return {
+      ok: false,
+      error: "No live listing found to update — the item's Reverb/eBay links don't point at a specific listing.",
+    };
+  }
+  return { ok: true, price, ebay_price: ebayPrice, reverb_applied: reverbApplied, siblings: members.length - 1 };
 }
 
 export { floorFor };
