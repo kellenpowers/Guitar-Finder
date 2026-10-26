@@ -18,13 +18,23 @@ estimated profit after resale fees, shipping, and the pickup drive
    pages — never click, type, fill forms, send messages, post, bid, or buy.
    Any change that would make a SCRAPER act on the owner's behalf must be
    rejected, even if requested casually. Separately, by the owner's explicit
-   decision (Oct 2026): the app MAY create and end the owner's own resale
-   listings through OFFICIAL seller APIs (Reverb API, eBay Sell APIs) — each
-   listing action initiated by an explicit owner tap on a specific item,
-   never autonomously, with one standing exception: after a confirmed sale
-   on one platform, ending the duplicate listing on the other platform is
-   pre-authorized. Buyer-side actions (messaging, bidding, buying) remain
-   forbidden everywhere.
+   decision (Oct 2026): the app MAY create, end, and reprice the owner's own
+   resale listings through OFFICIAL seller APIs (Reverb API, eBay Sell APIs)
+   — each listing action initiated by an explicit owner tap on a specific
+   item, never autonomously, with two standing exceptions the owner
+   pre-authorized: (a) after a confirmed sale on one platform, ending the
+   duplicate listing on the other platform; (b) the repricing autopilot
+   (owner's decision, Oct 26 2026: "as long as we're making the profit
+   margin we agreed on, you can handle all of that stuff") — a daily,
+   engagement-driven markdown pass (`server/services/repricer.ts`) whose
+   policy and margin floors live in `server/services/pricing.ts`: never
+   below the margin-doctrine floor until an item has sat unsold past the
+   last-resort window, then never below fee-adjusted breakeven on what the
+   owner paid; selling at an actual loss is always the owner's tap, never
+   automatic. Items without a cost basis stop at a conservative estimated
+   floor. The owner can switch any item's autopilot off in the app. Owner-
+   tapped price changes are not floor-bound (his item, his price). Buyer-side
+   actions (messaging, bidding, buying) remain forbidden everywhere.
 2. **The Facebook session is used only by `server/scrapers/facebook.ts`** and
    only to READ Marketplace pages: search/category results, plus a capped,
    rate-limited pass (`server/services/seller-names.ts`) that opens a few

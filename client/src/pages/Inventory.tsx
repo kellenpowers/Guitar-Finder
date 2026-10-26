@@ -4,8 +4,10 @@ import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
   generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
   queueListOnEbay, waitForCommand, downscaleImage, queueIdentifyItem, isReverbish,
+  queueRevisePrice,
   type InventoryItem, type IdentifyResult,
 } from "../lib/inventory";
+import { marginFloorPrice } from "../lib/economics";
 import { copyText } from "../lib/clipboard";
 
 const STATUSES: InventoryItem["status"][] = ["prepping", "listed", "sold"];
@@ -250,6 +252,45 @@ export default function Inventory() {
     setBusyId(null);
   }
 
+  // Push the CURRENT target price to every platform the item is live on. The
+  // Mac fee-matches the eBay price and keeps multi-unit siblings in step.
+  async function handlePushPrice(item: InventoryItem) {
+    const price = item.target_price;
+    if (!price || price <= 0) return alert("Set a target price first.");
+    const where = [item.reverb_url && "Reverb", item.ebay_url && "eBay (fee-matched, a bit higher)"]
+      .filter(Boolean)
+      .join(" and ");
+    if (!confirm(`Set "${item.title}" to $${Math.round(price)} on ${where}?`)) return;
+    setBusyId(item.id);
+    try {
+      const id = await queueRevisePrice(item, price);
+      const outcome = await waitForCommand(id);
+      await load();
+      if (!outcome) {
+        alert("The Mac hasn't finished yet — is it on? The change applies when it wakes.");
+      } else if (outcome.status === "done") {
+        const r = outcome.result || {};
+        const parts = [
+          item.reverb_url && `Reverb $${Math.round(price)}`,
+          r.ebay_price && `eBay $${r.ebay_price}`,
+        ].filter(Boolean);
+        const siblings = r.siblings
+          ? ` Also updated ${r.siblings} matching unit${r.siblings > 1 ? "s" : ""}.`
+          : "";
+        alert(`Done — ${parts.join(", ")}.${siblings}`);
+      } else {
+        alert(`Price change failed: ${outcome.error}`);
+      }
+    } catch (err) {
+      alert(
+        err instanceof Error && err.message.includes("unknown command")
+          ? "The cloud needs a small update for this — tell Claude."
+          : "Couldn't queue it. Check your connection and try again."
+      );
+    }
+    setBusyId(null);
+  }
+
   async function saveField(item: InventoryItem, fields: Partial<InventoryItem>) {
     // Optimistic: a same-gesture tap (edit the price, then tap List on eBay)
     // must see the new value instead of waiting out the network round-trip
@@ -449,6 +490,40 @@ export default function Inventory() {
                   </button>
                 </div>
               </div>
+
+              {item.status === "listed" && (item.reverb_url || item.ebay_url) && (
+                <div className="mt-2 flex items-center gap-x-3 gap-y-1.5 flex-wrap text-xs text-gray-600 bg-gray-50 border rounded px-2 py-1.5">
+                  <span>
+                    {item.views != null || item.watches != null
+                      ? `👀 ${item.views ?? "–"} views · ${item.watches ?? "–"} watching`
+                      : "Views and watchers show up after the next daily check."}
+                  </span>
+                  {item.bought_price != null ? (
+                    <span title="Lowest price that still clears your profit margin after fees">
+                      Floor ${Math.round(marginFloorPrice(item.bought_price))}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700">
+                      No cost on file (bundle?) — estimated floor only. Add Paid $ for exact floors.
+                    </span>
+                  )}
+                  <label className="flex items-center gap-1 cursor-pointer" title="Daily automatic markdowns, never below the floor">
+                    <input
+                      type="checkbox"
+                      checked={item.auto_reprice !== false}
+                      onChange={(e) => saveField(item, { auto_reprice: e.target.checked })}
+                    />
+                    Autopilot pricing
+                  </label>
+                  <button
+                    onClick={() => handlePushPrice(item)}
+                    disabled={busyId === item.id}
+                    className="px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {busyId === item.id ? "Pushing..." : "Push price to platforms"}
+                  </button>
+                </div>
+              )}
 
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {item.photos.map((p) => (

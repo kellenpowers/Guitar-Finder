@@ -26,3 +26,16 @@ export function maxBuyPrice(netProceeds: number): number {
   if (at100 >= MARGIN_BREAKPOINT) return at100;
   return netProceeds / (1 + SMALL_ITEM_MARGIN);
 }
+
+// ===== Reverb fees (mirror of server/services/fees.ts) =====
+const AVG_BUYER_TAX = 0.07;
+const REVERB_FEE_PCT = 0.05 + 0.0319 * (1 + AVG_BUYER_TAX); // ≈ 8.41%
+const REVERB_FEE_FIXED = 0.49;
+
+// Lowest asking price on Reverb that still clears the margin doctrine after
+// fees — the repricing autopilot's floor (the eBay price is fee-matched from
+// the Reverb price, so one floor governs both platforms).
+export function marginFloorPrice(boughtPrice: number): number {
+  const targetNet = boughtPrice + requiredProfit(boughtPrice);
+  return Math.ceil((targetNet + REVERB_FEE_FIXED) / (1 - REVERB_FEE_PCT)) - 0.01;
+}
