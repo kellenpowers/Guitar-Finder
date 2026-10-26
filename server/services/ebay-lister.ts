@@ -256,7 +256,7 @@ export async function reviseEbayQuantity(
 export async function reviseEbayPrice(
   itemId: string,
   price: number
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
   if (!(price > 0)) return { ok: false, error: "price must be above 0" };
   const inner = `<Item><ItemID>${xmlEscape(itemId)}</ItemID><StartPrice>${price.toFixed(2)}</StartPrice></Item>`;
   const response = await tradingCall("ReviseFixedPriceItem", inner);
@@ -266,6 +266,11 @@ export async function reviseEbayPrice(
     return { ok: true };
   }
   const error = tradingErrors(response);
+  // Ended or sold mid-flight: not an error to retry — sold-sync owns it
+  if (/alread|has ended|closed|was not found/i.test(error)) {
+    console.log(`eBay listing ${itemId} is no longer live — skipping its price change.`);
+    return { ok: false, gone: true, error };
+  }
   console.error(`FAILED to change eBay listing ${itemId} price to $${price.toFixed(2)}: ${error}`);
   return { ok: false, error };
 }

@@ -35,7 +35,7 @@ const REVERB_API_HEADERS = (token: string) => ({
 export async function updateReverbPrice(
   listingId: string,
   price: number
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
   const token = process.env.REVERB_API_TOKEN;
   if (!token) return { ok: false, error: "REVERB_API_TOKEN not set on the Mac" };
   if (!(price > 0)) return { ok: false, error: "price must be above 0" };
@@ -49,6 +49,11 @@ export async function updateReverbPrice(
     return { ok: true };
   }
   const text = await res.text().catch(() => "");
+  // Ended or sold mid-flight: not an error to retry — sold-sync owns it
+  if (res.status === 404 || /ended|sold|not live/i.test(text)) {
+    console.log(`Reverb listing ${listingId} is no longer live — skipping its price change.`);
+    return { ok: false, gone: true, error: `Reverb ${res.status}` };
+  }
   console.error(`FAILED to change Reverb listing ${listingId} price (${res.status}): ${text.slice(0, 200)}`);
   return { ok: false, error: `Reverb ${res.status}: ${text.slice(0, 150)}` };
 }

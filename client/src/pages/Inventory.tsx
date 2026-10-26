@@ -498,9 +498,9 @@ export default function Inventory() {
                       ? `👀 ${item.views ?? "–"} views · ${item.watches ?? "–"} watching`
                       : "Views and watchers show up after the next daily check."}
                   </span>
-                  {item.bought_price != null ? (
+                  {item.bought_price != null && item.bought_price > 0 ? (
                     <span title="Lowest price that still clears your profit margin after fees">
-                      Floor ${Math.round(marginFloorPrice(item.bought_price))}
+                      Floor ${marginFloorPrice(item.bought_price, item.reverb_url ? "reverb" : "ebay")}
                     </span>
                   ) : (
                     <span className="text-amber-700">
