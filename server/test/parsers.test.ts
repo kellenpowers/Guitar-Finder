@@ -296,6 +296,18 @@ describe("filterRelevant (comp relevance)", () => {
     expect(kept).toHaveLength(2);
   });
 
+  it("generic lookalikes can't price a branded item (the Juzek violin bug)", () => {
+    const violinComps = [
+      { title: "4/4 Violin with Case and Bow, student outfit" },
+      { title: "Full size violin case bow rosin bundle" },
+      { title: "John Juzek violin, Prague 1947, with case" },
+      { title: "Juzek master violin with bow" },
+    ];
+    const kept = filterRelevant("John Juzek Violin with Case and Bow", violinComps);
+    expect(kept.every((c) => /juzek/i.test(c.title))).toBe(true);
+    expect(kept.length).toBe(2);
+  });
+
   it("short tokens match whole words only — 'ae' must not match 'aerial'", () => {
     const cameraComps = [
       { title: "Canon AE-1 Program 35mm Film Camera" },
@@ -444,6 +456,57 @@ describe("isJunkListing (service-ad filter)", () => {
     expect(isServiceAd("Roofing - roof repair and replacement")).toBe(true);
     expect(isServiceAd("Gutter cleaning this week only")).toBe(true);
     expect(isServiceAd("Appliance repair, same day service")).toBe(true);
+  });
+
+  it("catches rentals and locksmith key-fob ads (the Oct 2026 dashboard junk)", async () => {
+    const { isServiceAd } = await import("../services/listing-filter.js");
+    expect(isServiceAd("Dump trailer rental")).toBe(true);
+    expect(isServiceAd("All Car smart Keys, remotes, fobs")).toBe(true);
+    expect(isServiceAd("Car keys made on the spot, all makes")).toBe(true);
+    expect(isServiceAd("Key programming and cutting, mobile locksmith")).toBe(true);
+    expect(isServiceAd("Bounce house for rent, weekends")).toBe(true);
+  });
+
+  it("keeps real key fobs and key-adjacent items for sale", async () => {
+    const { isServiceAd } = await import("../services/listing-filter.js");
+    expect(isServiceAd("Car key fob for 2019 Honda Civic, OEM")).toBe(false);
+    expect(isServiceAd("Honda key fob OEM remote, new battery")).toBe(false);
+    expect(isServiceAd("Key West sunset framed poster")).toBe(false);
+    expect(isServiceAd("Nord keyboard stand, heavy duty")).toBe(false);
+  });
+});
+
+describe("repeatedAdTitles (same ad blasted across cities)", () => {
+  it("flags a long title repeated in multiple places", async () => {
+    const { repeatedAdTitles } = await import("../services/listing-filter.js");
+    const spam = repeatedAdTitles([
+      { title: "All Car smart Keys, remotes, fobs", location: "Savannah, GA" },
+      { title: "All Car smart Keys, remotes, fobs", location: "Pooler, GA" },
+      { title: "All Car smart Keys, remotes, fobs", location: "Bluffton, SC" },
+      { title: "Fender Stratocaster", location: "Savannah, GA" },
+    ]);
+    expect(spam.has("all car smart keys, remotes, fobs")).toBe(true);
+    expect(spam.size).toBe(1);
+  });
+
+  it("leaves short generic titles alone even when they repeat", async () => {
+    const { repeatedAdTitles } = await import("../services/listing-filter.js");
+    const spam = repeatedAdTitles([
+      { title: "Electric guitar", location: "Savannah, GA" },
+      { title: "Electric guitar", location: "Pooler, GA" },
+      { title: "Electric guitar", location: "Bluffton, SC" },
+    ]);
+    expect(spam.size).toBe(0);
+  });
+
+  it("a seller relisting in ONE place is not spam", async () => {
+    const { repeatedAdTitles } = await import("../services/listing-filter.js");
+    const spam = repeatedAdTitles([
+      { title: "Marshall JCM800 half stack, trades welcome", location: "Savannah, GA" },
+      { title: "Marshall JCM800 half stack, trades welcome", location: "Savannah, GA" },
+      { title: "Marshall JCM800 half stack, trades welcome", location: "Savannah, GA" },
+    ]);
+    expect(spam.size).toBe(0);
   });
 });
 

@@ -103,10 +103,11 @@ async function browseSearch(options: ScraperOptions): Promise<ScrapedListing[]> 
 // ===== eBay asking-price valuation (tunables) =====
 // Sold-price data is off the table (the scrape is bot-blocked and eBay
 // declined Marketplace Insights access), so CURRENT asking prices from the
-// official Browse API are the best eBay signal. Things sell below ask, so
-// the estimate takes a haircut.
-const ASKING_TO_SOLD_HAIRCUT = 0.9;
-const ASKING_MIN_COMPS = 3;
+// official Browse API are the best eBay signal. Things sell below ask —
+// usually well below — so the estimate takes a haircut, and a thin comp set
+// returns nothing: better unvalued than wrongly valued.
+const ASKING_TO_SOLD_HAIRCUT = 0.85;
+const ASKING_MIN_COMPS = 5;
 
 // Estimate market value from current eBay asking prices (official API):
 // relevance-filtered, outlier-trimmed median, then the haircut.
