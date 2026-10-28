@@ -2,6 +2,12 @@
 // A comp must share at least this fraction of the item's significant words,
 // or it's discarded — this is what keeps guitar parts out of camera comps.
 const MIN_TOKEN_OVERLAP = 0.4;
+// The first couple of significant words are usually WHO made the item (brand,
+// maker). A comp that shares none of them is a different product no matter how
+// many generic words overlap — "4/4 violin with case and bow" is not a John
+// Juzek violin, and pricing one off the other poisons the estimate.
+const IDENTITY_TOKENS = 2;
+const OVERLAP_WITHOUT_IDENTITY = 0.75; // near-total overlap can stand in for the lead words
 
 const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "with", "for", "of", "in", "on", "to",
@@ -54,7 +60,9 @@ function tokenMatches(token: string, title: string): boolean {
 }
 
 // Keep only comps whose titles actually overlap the item's title. When the
-// query carries a model code, a comp must match at least one of them.
+// query carries a model code, a comp must match at least one of them; a comp
+// must also match one of the query's lead (identity) words unless its overlap
+// is near-total.
 export function filterRelevant<T extends { title: string }>(
   query: string,
   comps: T[]
@@ -62,6 +70,7 @@ export function filterRelevant<T extends { title: string }>(
   const tokens = significantTokens(query);
   if (tokens.length === 0) return [];
   const modelCodes = tokens.filter(isModelCode);
+  const identity = tokens.slice(0, IDENTITY_TOKENS);
 
   return comps.filter((c) => {
     const title = c.title.toLowerCase();
@@ -69,6 +78,11 @@ export function filterRelevant<T extends { title: string }>(
       return false;
     }
     const hits = tokens.filter((t) => tokenMatches(t, title)).length;
-    return hits / tokens.length >= MIN_TOKEN_OVERLAP;
+    const overlap = hits / tokens.length;
+    if (overlap < MIN_TOKEN_OVERLAP) return false;
+    if (!identity.some((t) => tokenMatches(t, title)) && overlap < OVERLAP_WITHOUT_IDENTITY) {
+      return false;
+    }
+    return true;
   });
 }

@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
-import { KEEP_PRICE_MIN } from "../services/listing-filter.js";
+import { KEEP_PRICE_MIN, isServiceAd, repeatedAdTitles } from "../services/listing-filter.js";
+import { normalizeQuery } from "../services/relevance.js";
 
 export function initSchema(db: Database.Database): void {
   db.exec(`
@@ -80,6 +81,52 @@ export function initSchema(db: Database.Database): void {
   migrateValueSource(db);
   purgeDollarServiceAds(db);
   purgeBadgeTitleRows(db);
+  purgeServiceSpamRows(db);
+}
+
+// One-time cleanup #3 (Oct 2026): locksmith key-fob ads, rentals, and
+// same-title-many-cities spam slipped past the old filter and got VALUED
+// (key-cutting machines priced the "items" at $449). Delete the rows and the
+// poisoned valuation-cache entries; the strengthened filter keeps new ones out.
+function purgeServiceSpamRows(db: Database.Database): void {
+  const done = db
+    .prepare("SELECT value FROM settings WHERE key = 'service_spam_purged'")
+    .get();
+  if (done) return;
+  const rows = db.prepare("SELECT id, title, location FROM listings").all() as {
+    id: number;
+    title: string;
+    location: string | null;
+  }[];
+  const spamTitles = repeatedAdTitles(rows);
+  const junk = rows.filter(
+    (r) => isServiceAd(r.title) || spamTitles.has(r.title.trim().toLowerCase())
+  );
+  const delListing = db.prepare("DELETE FROM listings WHERE id = ?");
+  const delCache = db.prepare("DELETE FROM valuation_cache WHERE query = ?");
+  const seenQueries = new Set<string>();
+  for (const r of junk) {
+    delListing.run(r.id);
+    const q = normalizeQuery(r.title);
+    if (q && !seenQueries.has(q)) {
+      seenQueries.add(q);
+      delCache.run(q);
+    }
+  }
+  // Every ebay_asking value so far was computed with the looser comp filter
+  // (generic violins pricing a John Juzek). Drop them all — sweeps re-value
+  // with the identity-token filter, politely capped per run.
+  const redo = db
+    .prepare("DELETE FROM market_prices WHERE value_source = 'ebay_asking'")
+    .run();
+  db.prepare("DELETE FROM valuation_cache WHERE value_source = 'ebay_asking'").run();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('service_spam_purged', '1')").run();
+  if (junk.length > 0 || redo.changes > 0) {
+    console.log(
+      `Purged ${junk.length} service/spam ad rows (rentals, key-fob locksmiths, repeated ads), ` +
+        `${seenQueries.size} poisoned cache entries, and queued ${redo.changes} eBay-asking values for re-estimation with the stricter comp filter.`
+    );
+  }
 }
 
 // One-time cleanup #2: a Facebook layout change briefly made every card parse

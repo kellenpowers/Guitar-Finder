@@ -5,7 +5,8 @@ import { estimateValue } from "./valuation.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
 import { applySellerNames } from "./seller-names.js";
-import { isServiceAd } from "./listing-filter.js";
+import { isServiceAd, repeatedAdTitles } from "./listing-filter.js";
+import { normalizeQuery } from "./relevance.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
@@ -137,6 +138,10 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
 
     const { found, newCount } = await sweepCategoriesInto(searchId, city, clSite);
 
+    // Spam ads blast the same title across every nearby city — drop every copy
+    // (and its cached valuation) before anything gets valued
+    purgeRepeatedAds(db);
+
     await applyDistances().catch((err) => console.error("Distance pass failed:", err));
 
     const { valued, networkLookups } = await valueUnvalued(searchId);
@@ -155,6 +160,27 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
   } finally {
     running = false;
   }
+}
+
+// The same distinctive title in several places = a service ad posted city by
+// city (the locksmith key-fob pattern). Delete every copy and its poisoned
+// valuation-cache entry so it can't come back valued.
+export function purgeRepeatedAds(db: any): number {
+  const rows = db.prepare("SELECT title, location FROM listings").all() as {
+    title: string;
+    location: string | null;
+  }[];
+  const spam = repeatedAdTitles(rows);
+  if (spam.size === 0) return 0;
+  const delListing = db.prepare("DELETE FROM listings WHERE lower(trim(title)) = ?");
+  const delCache = db.prepare("DELETE FROM valuation_cache WHERE query = ?");
+  let removed = 0;
+  for (const t of spam) {
+    removed += delListing.run(t).changes;
+    delCache.run(normalizeQuery(t));
+  }
+  console.log(`Purged ${removed} copies of ${spam.size} repeated service ads (same title, many cities).`);
+  return removed;
 }
 
 // Phase 2 for any search: value its freshest unvalued finds against sold
