@@ -4,8 +4,11 @@ A personal reselling-arbitrage app that runs on the owner's computer. Its job
 is finding items on local marketplaces that can be profitably resold
 nationally. An hourly **discovery** sweep (`server/services/discovery.ts`)
 browses high-resale categories newest-first on Facebook Marketplace and
-Craigslist — no keywords — plus optional saved keyword searches across all
-five sources (FB, Craigslist, eBay, OfferUp, Reverb). Every find is valued
+Craigslist — no keywords — in the home metro every hour plus a rotating pair
+of metros from the 250-mile circle (`REMOTE_CITIES`, owner's Oct 2026
+request; the Flip Score's drive-time penalty prices the longer pickups).
+Optional saved keyword searches run across all five sources (FB, Craigslist,
+eBay, OfferUp, Reverb). Every find is valued
 against real sold prices (eBay sold median → Reverb price guide → Reverb
 asking as labeled last resort, cached per query in `valuation_cache`), and
 the dashboard ranks by Flip Score (`server/services/flip-score.ts`) built on
