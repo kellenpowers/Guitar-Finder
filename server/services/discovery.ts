@@ -27,6 +27,41 @@ const VALUATIONS_PER_RUN = 40; // cap NETWORK sold-price lookups per sweep (poli
 const VALUATION_FETCH_LIMIT = 200; // rows considered per sweep — cache hits are free
 export const DISCOVERY_CRON = "0 * * * *"; // hourly
 
+// ===== Search radius (owner's request, Oct 2026: 250 miles) =====
+// Facebook and Craigslist only show one metro at a time, so a 250-mile radius
+// means sweeping the metros inside the circle. The home city is swept every
+// hour as always; the remote metros below ROTATE a couple per sweep so the
+// hourly Facebook load barely grows (polite-scraper rule — raise
+// REMOTE_CITIES_PER_SWEEP only with the owner's say-so). A remote find being
+// a few hours old doesn't matter: it's a long drive either way, and the Flip
+// Score's drive-time penalty decides whether it's worth it.
+export const REMOTE_CITIES: Array<{ location: string; cl: string }> = [
+  { location: "Hilton Head, SC", cl: "hiltonhead" },
+  { location: "Statesboro, GA", cl: "statesboro" },
+  { location: "Brunswick, GA", cl: "brunswick" },
+  { location: "Charleston, SC", cl: "charleston" },
+  { location: "Augusta, GA", cl: "augusta" },
+  { location: "Jacksonville, FL", cl: "jacksonville" },
+  { location: "Columbia, SC", cl: "columbia" },
+  { location: "Macon, GA", cl: "macon" },
+  { location: "Atlanta, GA", cl: "atlanta" },
+  { location: "Gainesville, FL", cl: "gainesville" },
+  { location: "Myrtle Beach, SC", cl: "myrtlebeach" },
+];
+const REMOTE_CITIES_PER_SWEEP = 2; // full circle covered every ~6 hours
+
+// Which remote metros this hour's sweep covers — stateless rotation off the
+// clock, so restarts can't reset it. Pure, exported for tests.
+export function remoteCitiesForSweep(nowMs: number): Array<{ location: string; cl: string }> {
+  if (REMOTE_CITIES.length === 0) return [];
+  const hour = Math.floor(nowMs / 3_600_000);
+  const start = (hour * REMOTE_CITIES_PER_SWEEP) % REMOTE_CITIES.length;
+  return Array.from(
+    { length: Math.min(REMOTE_CITIES_PER_SWEEP, REMOTE_CITIES.length) },
+    (_, i) => REMOTE_CITIES[(start + i) % REMOTE_CITIES.length]
+  );
+}
+
 const DISCOVERY_SEARCH_NAME = "Discovery (automatic)";
 
 let running = false;
@@ -134,9 +169,25 @@ export async function runDiscovery(): Promise<{ found: number; newCount: number;
     const city = citySlug(getSetting(db, "default_location"));
     const clSite = process.env.CRAIGSLIST_SITE || city;
 
-    console.log(`Discovery sweep starting (city: ${city || "account default"})...`);
+    const rotation = remoteCitiesForSweep(Date.now());
+    console.log(
+      `Discovery sweep starting (home: ${city || "account default"}; this hour's remote metros: ` +
+        `${rotation.map((r) => r.location).join(", ") || "none"})...`
+    );
 
-    const { found, newCount } = await sweepCategoriesInto(searchId, city, clSite);
+    let { found, newCount } = await sweepCategoriesInto(searchId, city, clSite);
+
+    // The 250-mile radius: remote metros, a couple per sweep. One metro
+    // failing must never stop the others (same rule as per-scraper isolation).
+    for (const rc of rotation) {
+      try {
+        const r = await sweepCategoriesInto(searchId, citySlug(rc.location), rc.cl);
+        found += r.found;
+        newCount += r.newCount;
+      } catch (err) {
+        console.error(`Remote metro sweep failed (${rc.location}):`, err instanceof Error ? err.message : err);
+      }
+    }
 
     // Spam ads blast the same title across every nearby city — drop every copy
     // (and its cached valuation) before anything gets valued
