@@ -1,4 +1,5 @@
 import { callCloud, fetchCloudInventory } from "./commands.js";
+import { endReverbListing } from "./reverb-lister.js";
 import { ebayConnection, getEbayUserToken } from "./ebay-auth.js";
 import {
   endEbayListing,
@@ -175,37 +176,6 @@ async function getReverbSold(): Promise<{ ids: Set<string>; facts: Map<string, S
   }
 
   return { ids, facts };
-}
-
-async function endReverbListing(listingId: string): Promise<boolean> {
-  const token = process.env.REVERB_API_TOKEN;
-  if (!token) return false;
-  const res = await fetch(
-    `https://api.reverb.com/api/my/listings/${listingId}/state/end`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/hal+json",
-        Accept: "application/hal+json",
-        "Accept-Version": "3.0",
-      },
-      body: JSON.stringify({ reason: "not_sold" }),
-    }
-  );
-  if (res.ok) {
-    console.log(`Reverb listing ${listingId} ended (sold elsewhere).`);
-    return true;
-  }
-  // Already gone (ended by hand, or sold there too) counts as done
-  if (res.status === 404 || res.status === 422) {
-    console.log(`Reverb listing ${listingId} was already ended/gone — nothing to take down.`);
-    return true;
-  }
-  console.error(
-    `FAILED to end Reverb listing ${listingId} (${res.status}) — will retry in 10 minutes. If this repeats, END IT MANUALLY ON REVERB.`
-  );
-  return false;
 }
 
 // One eBay listing can cover SEVERAL inventory items (a multi-unit listing of

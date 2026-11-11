@@ -5,20 +5,21 @@ import { estimateValue } from "./valuation.js";
 import { applyDistances } from "./distance.js";
 import { publishSnapshot } from "./publisher.js";
 import { applySellerNames } from "./seller-names.js";
-import { isServiceAd, repeatedAdTitles } from "./listing-filter.js";
+import { isServiceAd, isOffNiche, repeatedAdTitles } from "./listing-filter.js";
 import { normalizeQuery } from "./relevance.js";
 import type { ScrapedListing } from "../scrapers/base.js";
 
 // ===== Discovery tunables =====
 // Discovery sweeps high-resale categories newest-first (no keywords) on the
 // local marketplaces, then values finds against sold prices.
+// Owner's niches (Nov 2026): music equipment and instruments, commercial/pro
+// audio, cameras, electronics — things that are valuable but sellers often
+// don't know how to use or price. Tools, video games, and antiques were cut
+// (antique furniture sets kept flooding the dashboard); one word re-adds them.
 const CATEGORIES: Array<{ name: string; fb: string | null; cl: string | null }> = [
   { name: "electronics", fb: "electronics", cl: "ela" },
   { name: "photo/video", fb: null, cl: "pha" },
   { name: "musical instruments", fb: "musical-instruments", cl: "msa" },
-  { name: "tools", fb: "tools", cl: "tla" },
-  { name: "video games", fb: "video-games", cl: "vga" },
-  { name: "antiques", fb: "antiques", cl: "ata" },
 ];
 const PRICE_MIN = 25; // ignore cheap junk — fees and shipping eat small flips
 const PRICE_MAX = 5000;
@@ -95,7 +96,8 @@ function worthValuing(l: ScrapedListing): boolean {
     l.price >= PRICE_MIN &&
     l.price <= PRICE_MAX &&
     l.title.trim().length >= MIN_TITLE_LEN &&
-    !isServiceAd(l.title)
+    !isServiceAd(l.title) &&
+    !isOffNiche(l.title)
   );
 }
 

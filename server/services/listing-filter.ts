@@ -66,6 +66,31 @@ export function isJunkListing(title: string, price: number): boolean {
   return price < KEEP_PRICE_MIN || isServiceAd(title);
 }
 
+// ===== Off-niche guard (owner's niches, Nov 2026) =====
+// Discovery stays on music gear, pro/commercial audio, cameras, and
+// electronics. The marketplace category pages still surface furniture and
+// decor (antique furniture sets especially) — block the obvious ones. Whole-
+// word matched so "speaker cabinet" and "rugged case" stay safe.
+const OFF_NICHE_RE = new RegExp(
+  "\\b(?:" +
+    [
+      "furniture", "dresser", "armoire", "hutch", "credenza", "nightstands?",
+      "dining (set|table|chairs)", "coffee table", "end tables?", "side table",
+      "couch", "sofa", "sectional", "loveseat", "recliner", "ottoman",
+      "bed ?frame", "headboard", "mattress", "bookcase", "bookshelf",
+      "china (cabinet|set)", "curio", "wardrobe", "bar ?stools?",
+      "patio (set|furniture)", "rocking chair", "futon", "chandelier",
+      "rugs?", "quilt", "dolls?", "dollhouse", "figurines?", "vases?",
+      "flatware", "silverware", "dinnerware", "glassware",
+    ].join("|") +
+    ")\\b",
+  "i"
+);
+
+export function isOffNiche(title: string): boolean {
+  return OFF_NICHE_RE.test(title);
+}
+
 // ===== Repeated-ad spam (tunables) =====
 // The same distinctive title posted again and again in DIFFERENT places is a
 // service ad blasted at every city (the key-fob locksmith pattern), not five

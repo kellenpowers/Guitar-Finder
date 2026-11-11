@@ -122,7 +122,7 @@ Deno.serve(async (req: Request) => {
 
   if (action === "queue") {
     const kind = String(body.kind || "");
-    if (!["list_reverb", "list_ebay", "import_reverb", "identify_item", "manage_search", "revise_price"].includes(kind)) return json({ error: "unknown command" }, 400);
+    if (!["list_reverb", "list_ebay", "import_reverb", "identify_item", "manage_search", "revise_price", "end_listings"].includes(kind)) return json({ error: "unknown command" }, 400);
     const { data, error } = await supabase
       .from("commands")
       .insert({ kind, payload: body.payload ?? {} })

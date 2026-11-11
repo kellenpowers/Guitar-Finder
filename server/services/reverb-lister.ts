@@ -58,6 +58,31 @@ export async function updateReverbPrice(
   return { ok: false, error: `Reverb ${res.status}: ${text.slice(0, 150)}` };
 }
 
+// End one of the owner's live listings (sold elsewhere, or sold by the owner
+// himself). Already-gone counts as done.
+export async function endReverbListing(listingId: string): Promise<boolean> {
+  const token = process.env.REVERB_API_TOKEN;
+  if (!token) return false;
+  const res = await fetch(`https://api.reverb.com/api/my/listings/${listingId}/state/end`, {
+    method: "PUT",
+    headers: REVERB_API_HEADERS(token),
+    body: JSON.stringify({ reason: "not_sold" }),
+  });
+  if (res.ok) {
+    console.log(`Reverb listing ${listingId} ended (sold elsewhere).`);
+    return true;
+  }
+  // Already gone (ended by hand, or sold there too) counts as done
+  if (res.status === 404 || res.status === 422) {
+    console.log(`Reverb listing ${listingId} was already ended/gone — nothing to take down.`);
+    return true;
+  }
+  console.error(
+    `FAILED to end Reverb listing ${listingId} (${res.status}) — will retry in 10 minutes. If this repeats, END IT MANUALLY ON REVERB.`
+  );
+  return false;
+}
+
 // Engagement stats for the owner's LIVE listings, keyed by listing id. Reverb
 // returns watcher/view counts on the seller's own listings; fields it doesn't
 // send stay null (unknown), never zero.
