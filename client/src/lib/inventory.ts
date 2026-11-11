@@ -220,6 +220,18 @@ export async function queueImportReverb(): Promise<void> {
   await call("POST", { action: "queue", kind: "import_reverb", payload: {} });
 }
 
+// The owner sold an item himself (local cash sale, or anywhere the watcher
+// can't see): ask the Mac to end its live listings on both platforms, then
+// mark it sold
+export async function queueEndListings(item: InventoryItem): Promise<string> {
+  const data = await call("POST", {
+    action: "queue",
+    kind: "end_listings",
+    payload: { inventory_id: item.id },
+  });
+  return data.command?.id || "";
+}
+
 // Push a price change to every platform the item is live on (the Mac fee-
 // matches the eBay price and keeps multi-unit siblings in step)
 export async function queueRevisePrice(item: InventoryItem, price: number): Promise<string> {

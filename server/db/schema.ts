@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { KEEP_PRICE_MIN, isServiceAd, repeatedAdTitles } from "../services/listing-filter.js";
+import { KEEP_PRICE_MIN, isServiceAd, isOffNiche, repeatedAdTitles } from "../services/listing-filter.js";
 import { normalizeQuery } from "../services/relevance.js";
 
 export function initSchema(db: Database.Database): void {
@@ -82,6 +82,23 @@ export function initSchema(db: Database.Database): void {
   purgeDollarServiceAds(db);
   purgeBadgeTitleRows(db);
   purgeServiceSpamRows(db);
+  purgeOffNicheRows(db);
+}
+
+// One-time cleanup #4 (Nov 2026): the owner narrowed discovery to his niches
+// (music gear, pro audio, cameras, electronics) — clear the furniture and
+// decor already found so the dashboard reflects the new focus immediately.
+function purgeOffNicheRows(db: Database.Database): void {
+  const done = db
+    .prepare("SELECT value FROM settings WHERE key = 'off_niche_purged'")
+    .get();
+  if (done) return;
+  const rows = db.prepare("SELECT id, title FROM listings").all() as { id: number; title: string }[];
+  const junk = rows.filter((r) => isOffNiche(r.title));
+  const del = db.prepare("DELETE FROM listings WHERE id = ?");
+  for (const r of junk) del.run(r.id);
+  db.prepare("INSERT INTO settings (key, value) VALUES ('off_niche_purged', '1')").run();
+  if (junk.length > 0) console.log(`Purged ${junk.length} off-niche rows (furniture, decor).`);
 }
 
 // One-time cleanup #3 (Oct 2026): locksmith key-fob ads, rentals, and

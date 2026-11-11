@@ -14,3 +14,14 @@ To rotate a secret: pick a new value, redeploy the function with it
 substituted, and update the matching side (.env for PUBLISH_KEY; tell the
 owner the new passcode for snapshot).
 
+## Pending deploy (do this when the Supabase connection is available)
+
+1. Security (from Supabase's Nov 8 2026 advisor email — the other tables
+   already have this): `ALTER TABLE "public"."ignores" ENABLE ROW LEVEL SECURITY;`
+   (our functions use the service key, which bypasses RLS — nothing breaks).
+2. Redeploy `inventory/` (v9) from this repo copy — adds the `end_listings`
+   command kind (owner-tapped takedown after a sale the watcher can't see).
+
+Until v9 lands, marking a live item sold on the phone reports that the cloud
+needs an update (status is left unchanged). Remove this section once deployed.
+

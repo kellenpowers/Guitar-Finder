@@ -4,7 +4,7 @@ import {
   listInventory, createItem, updateItem, deleteItem, uploadPhoto, photoUrl,
   generateListingDraft, syncAskingPrice, queueListOnReverb, queueImportReverb,
   queueListOnEbay, waitForCommand, downscaleImage, queueIdentifyItem, isReverbish,
-  queueRevisePrice,
+  queueRevisePrice, queueEndListings,
   type InventoryItem, type IdentifyResult,
 } from "../lib/inventory";
 import { marginFloorPrice } from "../lib/economics";
@@ -477,7 +477,40 @@ export default function Inventory() {
                 <div className="flex items-center gap-2">
                   <select
                     value={item.status}
-                    onChange={(e) => saveField(item, { status: e.target.value as InventoryItem["status"] })}
+                    onChange={async (e) => {
+                      const next = e.target.value as InventoryItem["status"];
+                      // Marking a live item sold: the watcher only sees platform
+                      // sales, so a sale the owner made himself must take the
+                      // live listings down here — or they'd double-sell.
+                      const live = next === "sold" && item.status === "listed" && (item.reverb_url || item.ebay_url);
+                      if (!live) return saveField(item, { status: next });
+                      const where = [item.reverb_url && "Reverb", item.ebay_url && "eBay"]
+                        .filter(Boolean)
+                        .join(" and ");
+                      if (!confirm(`Sold it yourself? OK takes the live ${where} listing(s) down now and marks it sold. (Cancel = only change the status — the listings STAY UP.)`)) {
+                        return saveField(item, { status: next });
+                      }
+                      setBusyId(item.id);
+                      try {
+                        const id = await queueEndListings(item);
+                        const outcome = await waitForCommand(id);
+                        await load();
+                        if (!outcome) {
+                          alert("Queued — the Mac takes the listings down when it's on; the status flips to sold then.");
+                        } else if (outcome.status === "done") {
+                          alert(`Done — ${outcome.result?.detail || "listings taken down"}. Marked sold.`);
+                        } else {
+                          alert(`Takedown failed: ${outcome.error}\n\nThe item stays "listed" so you can retry — check the listing on the platform if this repeats.`);
+                        }
+                      } catch (err) {
+                        alert(
+                          err instanceof Error && err.message.includes("unknown command")
+                            ? "The cloud needs a small update for this — tell Claude. (Status unchanged; listings still live.)"
+                            : "Couldn't queue it. Check your connection and try again."
+                        );
+                      }
+                      setBusyId(null);
+                    }}
                     className="text-sm border rounded p-1.5"
                   >
                     {STATUSES.map((s) => (

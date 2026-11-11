@@ -163,6 +163,20 @@ async function runCommand(command: any): Promise<void> {
     return;
   }
 
+  // Owner marked an item sold himself (local/cash sale) — take its live
+  // listings down on both platforms, then mark it sold
+  if (command.kind === "end_listings") {
+    const { endListingsForItem } = await import("./takedown.js");
+    const result = await endListingsForItem(String(payload.inventory_id || ""));
+    await callCloud({
+      action: "complete",
+      id: command.id,
+      status: result.ok ? "done" : "error",
+      result,
+    });
+    return;
+  }
+
   if (command.kind === "import_reverb") {
     const result = await importReverbListings();
     await callCloud({

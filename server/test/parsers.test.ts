@@ -467,6 +467,21 @@ describe("isJunkListing (service-ad filter)", () => {
     expect(isServiceAd("Bounce house for rent, weekends")).toBe(true);
   });
 
+  it("blocks off-niche furniture and decor, keeps the owner's niches", async () => {
+    const { isOffNiche } = await import("../services/listing-filter.js");
+    expect(isOffNiche("Antique furniture set, solid oak")).toBe(true);
+    expect(isOffNiche("Dining table and chairs")).toBe(true);
+    expect(isOffNiche("Mid-century dresser")).toBe(true);
+    expect(isOffNiche("Persian rug 8x10")).toBe(true);
+    expect(isOffNiche("China cabinet with glass doors")).toBe(true);
+    // the niches stay: music gear, pro audio, cameras, electronics
+    expect(isOffNiche("Marshall 4x12 speaker cabinet")).toBe(false);
+    expect(isOffNiche("Rugged Pelican camera case")).toBe(false);
+    expect(isOffNiche("QSC K12.2 powered speaker")).toBe(false);
+    expect(isOffNiche("Canon AE-1 35mm film camera")).toBe(false);
+    expect(isOffNiche("Vintage console stereo receiver")).toBe(false);
+  });
+
   it("keeps real key fobs and key-adjacent items for sale", async () => {
     const { isServiceAd } = await import("../services/listing-filter.js");
     expect(isServiceAd("Car key fob for 2019 Honda Civic, OEM")).toBe(false);
